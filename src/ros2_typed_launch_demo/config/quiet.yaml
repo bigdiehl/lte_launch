@@ -1,0 +1,5 @@
+# Overlay: later --config files override earlier ones, key by key.
+turtlesim:
+  background_b: 90      # overrides blue_turtle.yaml
+teleop:
+  enabled: false

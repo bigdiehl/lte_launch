@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ros2_typed_launch</name>
+  <version>0.1.0</version>
+  <description>Typed, schema-driven launch files for ROS 2</description>
+  <maintainer email="docdiehl@gmail.com">Spencer Diehl</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <build_depend>ament_cmake_python</build_depend>
+
+  <!-- ament_index_python: package-relative config lookups (config.py, the -config flag) -->
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <!--
+    Pydantic 1: schema.py targets the v1 API on purpose, matching what rosdep's
+    python3-pydantic key actually installs on Ubuntu 24.04 (see
+    working/design-notes.md for the v1-vs-v2 trade-offs).
+  -->
+  <exec_depend>python3-pydantic</exec_depend>
+  <!-- optional at runtime (cli.py imports it defensively); enables tab completion -->
+  <exec_depend>python3-argcomplete</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
