@@ -17,6 +17,9 @@
   <!-- The launch files import pydantic directly (config models); declared here
        too, not only transitively via ros2_typed_launch; see its package.xml. -->
   <exec_depend>python3-pydantic</exec_depend>
+  <!-- stock_include_launch.py looks up its own share dir directly (finding the
+       stock launch file it includes), not only transitively via ros2_typed_launch. -->
+  <exec_depend>ament_index_python</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

@@ -2,7 +2,7 @@
 
 `ros2_typed_launch` gives ROS 2 typed, schema-driven launch files: a Pydantic model is the
 interface of a launch, and the `tlaunch` command turns it into a command line, YAML config
-layering and validation. Status: **working prototype**, Jazzy, 69 unit tests, `ament_cmake`.
+layering and validation. Status: **working prototype**, Jazzy, 73 unit tests, `ament_cmake`.
 
 ## Quick start (run the demo)
 
@@ -49,11 +49,13 @@ headless/scripted use: `../CLAUDE.md` (one level up, at the repo's `src/`).
   dotted/on-disk-slash path — or a path for standalone files; schema-generated help;
   snake_case flags; list/dict flags;
   multi-file deep-merged `--config` incl. `<package>:<path>`; validation before launch;
-  unknown-key/typo detection; provenance; `--schema`; `--show-config`). Both packages build
-  with **`ament_cmake`**; launch files are `*_launch.py` modules in a top-level `launch/`
-  directory installed as a real subpackage (not a `share/launch/` copy), re-exported from
-  `launch/__init__.py`, and include each other with ordinary `import`; Pydantic **1** (system);
-  tab completion (`argcomplete`); four demo launches; 69 tests.
+  unknown-key/typo detection; provenance; `--schema`; `--show-config`; a typed launch can
+  include a traditional stock launch file, converting config to `launch_arguments` with
+  `actions.stock_args`). Both packages build with **`ament_cmake`**; launch files are
+  `*_launch.py` modules in a top-level `launch/` directory installed as a real subpackage
+  (not a `share/launch/` copy), re-exported from `launch/__init__.py`, and include each
+  other with ordinary `import`; Pydantic **1** (system); tab completion (`argcomplete`);
+  five demo launches; 73 tests.
 - **Deferred by you:** units, pluggable schema backends / `InputDict`, overrides, tmux.
 - **Needs decisions:** see `design-notes.md`'s open questions (supported distros, option-name
   rule, stock-launch interop, config polish).

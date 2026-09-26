@@ -50,7 +50,12 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   from another package. `include(child, config)` builds the child eagerly and returns a
   scoped `GroupAction`; the parent's namespace/params/remaps/env are inherited.
 - Stock `launch`/`launch_ros` actions are used as-is (`PushRosNamespace`, `SetParameter`,
-  `TimerAction`, event handlers, ...); see `turtle_showcase_launch.py`.
+  `TimerAction`, event handlers, ...); see `turtle_showcase_launch.py`. A typed launch can
+  also **include a traditional (untyped) stock launch file** via stock
+  `IncludeLaunchDescription`; `actions.stock_args({name: config.x, ...})` converts typed
+  config values to the flat strings stock launch args are always made of (bool ->
+  `"true"`/`"false"`, everything else `str()`'d). One-way only — see `stock_include_launch.py`
+  and design-notes.md, Q17.
 - **Pydantic 1** (system, apt/rosdep `python3-pydantic`), not 2 — launch authors import
   Pydantic directly in their own files, so a system install matters more than v2's
   stricter API. Both `package.xml`s declare `<exec_depend>python3-pydantic</exec_depend>`.
@@ -83,18 +88,22 @@ Two **`ament_cmake`** packages under `src/`:
     find and import a launch, by package+bare-filename search, an explicit
     dotted/on-disk-slash path, or a standalone file path), `schema.py` (**all** Pydantic
     access), `config.py` (YAML, `<package>:<path>` refs, merge), `core.py` (`@launch`,
-    `TypedLaunch`), `actions.py` (`include`). `test/` — pytest suite (80 tests).
+    `TypedLaunch`), `actions.py` (`include`, `stock_args`). `test/` — pytest suite (73 tests).
 - `ros2_typed_launch_demo/` — demo.
   - `package.xml`/`CMakeLists.txt`: installs the base package, *and* the top-level
     `launch/` directory as a subpackage nested under it (`ament_python_install_package(launch
     PACKAGE_DIR launch DESTINATION ${PYTHON_INSTALL_DIR}/${PROJECT_NAME})` — the trick
     behind the layout below).
   - `launch/`: `turtle_demo_launch.py`, `turtle_teleop_launch.py`,
-    `localization_launch.py`, `turtle_showcase_launch.py` — ordinary submodules of
-    `ros2_typed_launch_demo.launch`, importing each other directly; `__init__.py`
-    re-exports all four.
+    `localization_launch.py`, `turtle_showcase_launch.py`, `stock_include_launch.py` —
+    ordinary submodules of `ros2_typed_launch_demo.launch`, importing each other directly;
+    `__init__.py` re-exports all five.
   - `config/*.yaml` — example `--config` files, installed to the share dir (unaffected
     by where the Python launch files live).
+  - `stock_launch/spawn_turtle.launch.py` — a traditional (untyped) launch file, installed
+    to `share/ros2_typed_launch_demo/launch/` like any stock package would (not part of the
+    Python package); included by `stock_include_launch.py` via stock
+    `IncludeLaunchDescription` + `actions.stock_args`.
 - `working/` — docs + `prototypes/` (`nav_demo_launch.py`, `nav.yaml`: richer sample
   schema, not part of a package — run by path). `COLCON_IGNORE`d, as is `.venv/`.
 

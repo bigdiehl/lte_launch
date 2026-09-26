@@ -18,4 +18,9 @@ ament_python_install_package(launch
 
 install(DIRECTORY config/ DESTINATION share/${PROJECT_NAME}/config)
 
+# A traditional (untyped) stock launch file, installed to share/ the way any
+# ROS package would -- exercised by stock_include_launch.py to show a typed
+# launch including one and converting its config into launch_arguments.
+install(DIRECTORY stock_launch/ DESTINATION share/${PROJECT_NAME}/launch)
+
 ament_package()

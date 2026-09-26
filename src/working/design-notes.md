@@ -93,12 +93,25 @@ Closed, no work needed: an import cycle between launch files is already a clear 
 `ImportError`, caught and wrapped by `loader.py`; no cycle-detection code needed (verified,
 `test_loader.py`).
 
-### Interop with stock launch files (Q17) — OPEN
+### Interop with stock launch files (Q17) — PARTLY
 
-Typed → stock (a typed launch's actions included by a stock `IncludeLaunchDescription`) is
-untested but should work — actions are actions. Stock → typed is not possible (typed files
-reject stock `ros2 launch` outright). Leaning: accept the one-way boundary; revisit only if a
-concrete need for calling into a typed launch from an existing stock tree comes up.
+**Built:** typed → stock, the common case (a typed launch includes a third-party package's
+plain launch file). `actions.stock_arg`/`stock_args` convert typed config values to the flat
+strings stock launch args are always made of (bool → `"true"`/`"false"`, `Enum` → its value,
+everything else `str()`'d; collections/models rejected with a clear error — no agreed string
+form for those). The author still calls stock `IncludeLaunchDescription` +
+`PythonLaunchDescriptionSource` themselves (principle 6: stock actions pass through
+untouched); `stock_args` only replaces manual `str(config.x)` calls at each site. Demo:
+`stock_include_launch.py` includes `stock_launch/spawn_turtle.launch.py` (a genuine untyped
+file, installed to `share/` like any stock package would, found via
+`get_package_share_directory` — not part of the Python package, so tlaunch's own search never
+sees it). Verified with a real launch: typed config → `stock_args` → stock
+`LaunchConfiguration` → node parameter, end to end.
+
+Still open: stock (a stock launch including one of ours, or a stock file being run under
+`tlaunch`) — not possible today; typed files reject stock `ros2 launch` outright, and nothing
+generates stock `DeclareLaunchArgument`s from a schema. Leaning: accept the boundary; revisit
+only if a concrete need for calling into a typed launch from an existing stock tree comes up.
 
 ### Launch-time values (Q19) — PROPOSED
 
@@ -160,7 +173,7 @@ Leaning: declare Jazzy-only until told otherwise.
 
 ### Test strategy beyond unit tests (Q21) — PROPOSED
 
-Have: 80 unit tests (`pytest`/`colcon test`), most needing no ROS; real launches checked by
+Have: 73 unit tests (`pytest`/`colcon test`), most needing no ROS; real launches checked by
 hand (`ros2 param get`, `/tf_static`, node lists, exit codes). Proposed next step: one
 subprocess-based integration test running the installed `tlaunch` on the showcase launch,
 skipped unless ROS + turtlesim are present. (`launch_testing` was considered and rejected — a
