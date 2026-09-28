@@ -56,6 +56,11 @@ headless/scripted use: `../CLAUDE.md` (one level up, at the repo's `src/`).
   (not a `share/launch/` copy), re-exported from `launch/__init__.py`, and include each
   other with ordinary `import`; Pydantic **1** (system); tab completion (`argcomplete`);
   five demo launches; 73 tests.
-- **Deferred by you:** units, pluggable schema backends / `InputDict`, overrides, tmux.
-- **Needs decisions:** see `design-notes.md`'s open questions (supported distros, option-name
-  rule, stock-launch interop, config polish).
+- **Designed, not built (active front):** config-driven node parameters and remappings under
+  ROS-native node patterns (`/**`, `/**/node`) with wildcards interpreted by us — Q8; `$(...)`
+  substitutions in config values, reusing the stock launch parser — Q25; node parameter schemas
+  and introspection — Q24.
+- **Deferred by you:** units, pluggable schema backends / `InputDict`, tmux.
+- **Needs decisions:** see `design-notes.md`'s open questions — most immediately Q8's four
+  (is `launch_args:` required, node patterns top-level or nested, error on a no-match pattern,
+  how the data reaches nodes), then supported distros, option-name rule, config polish.
