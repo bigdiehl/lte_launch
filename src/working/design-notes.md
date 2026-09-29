@@ -42,7 +42,7 @@ Status tags on open questions: **OPEN** (needs a decision) · **PARTLY** (part b
 | `include` | `include(child, config)` builds the child eagerly, returns a scoped `GroupAction`; parent namespace/params/remaps/env are inherited |
 | Own schema interface / `InputDict` | Deferred — see `schema-interface-and-input-dict.md` |
 | Node params/remaps from config | ROS-native node patterns (`/**`, `/**/node`, `/ns/*`), **not** invented per-node ids; wildcards **interpreted by us** for both lanes, because rcl implements them for params but refuses them for remappings. Keys `ros__parameters` / `ros__remappings`, at the file's top level; launch schema under a **required** `launch_args:`. Reaches nodes through **our `Node` wrapper**. Untyped by default; typable via a `RosParams` Pydantic type; `--strict` refuses the untyped lane. Fully decided, not built — Q8 |
-| `$(...)` in config files | Reuse `launch.frontend.parse_substitution` (the stock lark grammar), expanded **eagerly per string leaf** at load time. Not our own parser, not `ParameterFile`. Designed, not built — Q25 |
+| `$(...)` in config files | Reuse `launch.frontend.parse_substitution` (the stock lark grammar), expanded **eagerly per string leaf** at load time. Not our own parser, not `ParameterFile`. Built — Q25 |
 | Node-defined schemas | **Optional**: when a node ships a schema, `tlaunch -h` shows its parameters; when it doesn't, the untyped lane carries them. MoveIt's `generate_parameter_library` spec is *not installed* by its CMake macro, so discovery needs our own resource — Q24 |
 | tmux | Deferred — see `#deferred-designs` below |
 | License | Not a concern for now |
@@ -148,130 +148,100 @@ Whether a child scope should carry its own namespace/env/remap isolation, and wh
 child's config should be directly addressable from YAML/CLI. Today: a plain scoped
 `GroupAction`; the parent sets namespace etc. with stock actions.
 
-### Node params and remappings from config (Q8) — DECIDED, not built
+### Node params and remappings from config (Q8) — BUILT (2026-09-27/28)
 
-**Supersedes the old "overrides" sketch** (which keyed off custom per-node logical ids we
-would have invented). Decided instead to use **ROS's own node-pattern spelling**, so an
-existing ROS parameter file is already most of the way to being a tlaunch config. Raised
-2026-09-26 with `load_config.py` as the reference implementation.
-
-Target file shape — three sections, one file:
+Replaces the old "overrides" sketch, which keyed off per-node ids we would have invented. ROS's
+own node-pattern spelling means an existing ROS parameter file is nearly a tlaunch config already.
 
 ```yaml
-launch_args:                              # (1) our typed schema
+launch_args:                      # the typed schema, validated
   turtlesim: {background_r: 99}
-/**:                                      # (2)+(3) ROS-native node patterns
+/**:                              # node patterns: * is one token, ** is zero or more
   ros__parameters: {use_sim_time: true}
-  ros__remappings: {/scan: /lidar/scan}
 /my_ns/planner:
   ros__parameters: {tolerance: 0.3}
+  ros__remappings: {turtle1/cmd_vel: /joy_vel}
 ```
 
-Params and remappings are **untyped, schema-free lanes** straight to the matching nodes — this
-is the deliberate answer to Q24's duplication problem, not a gap.
+Params and remappings are **untyped, schema-free lanes** to the matching nodes — the deliberate
+answer to Q24's duplication problem, not a gap. They *can* be typed when wanted, via a `RosParams`
+model handed to `node(params=...)`, which makes Q24's tiers 1 and 2 one mechanism seen from two
+ends. Delivery is our `node()` wrapper; plain stock `Node` still works, it just collects nothing.
+`--ros-param '[PATTERN:]name=value'` and `--ros-remap '[PATTERN:]from=to'` are the CLI equivalents
+(hyphenated per Q18, so neither can collide with a field name); `--strict` refuses the untyped
+lane outright.
 
-**Decided 2026-09-27:**
+**Why we match the wildcards ourselves** — verified here, both directions:
 
-- The remapping key is **`ros__remappings`**, not `remappings` — symmetric with
-  `ros__parameters`, and the double underscore marks both as ROS's reserved namespace rather
-  than schema fields of ours.
-- **A `Node` wrapper** is how the data reaches nodes (settles open decision 4 below): our wrapper
-  collects the matched params/remaps for that node and passes them to stock
-  `launch_ros.actions.Node`. Plain stock `Node` keeps working (principle 6) — it just doesn't
-  receive the collected config, which is the honest trade and needs to be documented, not hidden.
-- **A Pydantic type for ROS parameters**, so params *can* be typed in the schema when the author
-  wants them to be: a section declared with that type is understood as "these are ROS parameters",
-  validated like any other schema field, and handed to the wrapper automatically — no separate
-  restating. Sketch: `class TurtlesimParams(RosParams): background_r: int = Field(69, ge=0, le=255)`,
-  then `TypedNode(package="turtlesim", executable="turtlesim_node", params=config.turtlesim)`.
-  This makes tiers 1 and 2 of Q24 the same mechanism seen from two ends: typed when a schema
-  exists, untyped lane when it doesn't.
-- **Strictness flags** to refuse untyped params/remaps entirely, for interfaces that want to be
-  fully specified. Naming open (`--strict-params`, or per-launch `@launch(strict_params=True)`,
-  or both — a launch author's default that the CLI can tighten but not loosen).
-- **CLI targeting** for arbitrary params/remaps, patterns included. Proposal:
-  `--ros-param '/**:use_sim_time=true'` and `--ros-remap '/my_ns/planner:/scan=/lidar/scan'`,
-  pattern optional and defaulting to `/**`, repeatable, layered above config files like every
-  other CLI value. Hyphenated per Q18, so neither can ever collide with a schema field name.
-
-**Why we must do the matching ourselves** (verified on this machine, both directions):
-
-| | `/**`, `/**/node` wildcards |
+| | `/**`, `/**/node` |
 |---|---|
-| Parameters, via `--params-file` | rcl matches them itself — works |
-| Remappings, via `-r /**:from:=to` | **rcl refuses**: `Couldn't parse remap rule ... Wildcard '**' is not implemented` |
+| Parameters, via `--params-file` | rcl matches them itself |
+| Remappings, via `-r /**:from:=to` | **rcl refuses**: `Wildcard '**' is not implemented`; only an exact node-name prefix works |
 
-Only an exact node-name prefix remap works (`-r talker:chatter:=named_chatter`, verified). So
-wildcard remapping **does not exist in ROS 2**; interpreting the patterns ourselves and
-emitting concrete per-node rules is a real capability, not a reimplementation. Decided
-2026-09-27: we interpret them ourselves, for params and remappings alike, so both lanes behave
-identically.
+Wildcard remapping therefore does not exist in ROS 2 at all, so doing it ourselves is a
+capability rather than a reimplementation. And because we know every node we launch, a pattern
+matching none of them can be reported at all — stock ROS ignores a typo'd section in silence
+(verified: the node starts, zero warnings).
 
-**The value on top**: we know every node we launch, so a pattern matching *none* of them can be
-reported. Verified that stock ROS silently ignores a typo'd section (`/typo_node_name:` in a
-params file → node starts fine, zero warnings) — the most common ROS param-file frustration.
+Settled decisions:
 
-All five open decisions were settled 2026-09-27:
+| # | Decision |
+|---|---|
+| 1 | `launch_args:` is **required**; a bare top-level schema key is an error naming the fix. Breaking change, migration done |
+| 2 | Node patterns sit at the **top level**, so a plain ROS parameter file is valid as-is. A top-level key is a pattern iff it holds `/` or `*`, or its value has `ros__parameters`/`ros__remappings`; anything else stays an unknown-key error |
+| 3 | A pattern matching no launched node **does not fail** — it may target a node behind a disabled toggle, or a stock `Node`. Quiet unless `-d`; `--show-config` shows `NO MATCH` instead. Whether the warning is wanted at all is still open |
+| 4 | Delivery is a **`Node` wrapper**, not a post-pass over the built tree — that would reach stock `Node`s too, but `Node` keeps its parameters private and it would apply config nobody opted into |
+| 5 | A typed field and an untyped section setting the same parameter: **typed wins**; the advisory is `-d`-only, and the value is marked in `--show-config` |
 
-| # | Decision | Chosen |
-|---|---|---|
-| 1 | Is `launch_args:` required? | **Required, always.** One rule, no ambiguity, better errors. A bare top-level schema key is now an error — **breaking**, see migration below |
-| 2 | Where do node patterns live? | **Top level**, beside `launch_args:` — so a plain ROS parameter file is a valid tlaunch config with no edits. Needs the sniffing rule: a top-level key is a node pattern iff it contains `/` or `*`, or its value has `ros__parameters`/`ros__remappings`; anything else is an unknown-key error |
-| 3 | Pattern matching no launched node | **Warn, don't fail.** A section may legitimately target a node behind a disabled toggle. Implication: the warning has to be *visible*, not buried in launch output — and `--show-config` should show which patterns matched which nodes, so the quiet case is still inspectable |
-| 4 | How the data reaches nodes | **A `Node` wrapper.** Rejected: a post-pass over the built tree — it would reach plain stock `Node`s, but `Node` keeps `parameters`/`remappings` private and it would apply config to nodes the author never opted into |
-| 5 | Typed field *and* untyped `ros__parameters` set the same param | **Typed wins, with a warning** naming both, so the effective value is never a surprise |
+3 and 5 proceed quietly, softer than principle 4's usual line, because both have legitimate uses
+and neither changes the effective values. Principle 4 is served instead by `--show-config` being
+fully inspectable. `--strict` is the single switch that turns both into errors.
 
-Note 3 and 5 are both "warn, proceed" — deliberately softer than principle 4's usual line,
-because both cases have legitimate uses (conditional nodes; a params file shared across
-launches). A warning is not silence, so principle 4 still holds. **The strictness flag above is
-what makes them errors** for interfaces that want to be airtight: `--strict` (or the launch
-author's own default) promotes both warnings to errors and refuses the untyped lane. That keeps
-one mechanism for "I want this fully specified" rather than three separate switches.
+**Effective config output.** `--show-config` renders the effective config **as a config file** —
+the same YAML every run writes to `/tmp/tlaunch/<launch>-<pid>.yaml` and logs, so "what did that
+run actually use?" is always answerable, and the answer is valid `--config` input (round-trip
+verified). The two lanes keep their own keys; sections sharing a pattern merge into one block,
+which per-value provenance makes lossless and which keeps duplicate keys out of a document Q6's
+future duplicate-key check would otherwise reject. Provenance, matched nodes and shadowed values
+ride along as YAML comments. Renderer: `effective.py`. Supersedes Q6's `--dump-config` item.
 
-**Migration** (consequence of decision 1): `config/blue_turtle.yaml`, `config/quiet.yaml` and
-`working/prototypes/nav.yaml` all need their contents nested under `launch_args:`, and the error
-for a bare root should say exactly that ("top-level key 'turtlesim' — launch settings now go
-under `launch_args:`"), since every existing file and every doc example hits it once.
+**Not covered yet**, roughly in priority order: an enclosing `PushRosNamespace` is invisible to
+matching (nodes match on their *declared* `name`/`namespace`; the launch-time namespace stack
+would need tracking in our own group/include helpers), so `--show-config` under-reports for a
+launch that names nodes dynamically; a node with no `name=` can only be matched by `/**`, since
+rcl picks the executable's default at startup; nodes inside an *included stock* launch file are
+unreachable for remappings, though params can still be handed through as a file for rcl to match;
+`ComposableNode` has no wrapper.
 
-**Known boundary, to document rather than discover later**: matching needs each node's FQN at
-build time. For nodes in *our* typed launches that is available (we own the namespace stack,
-and our config values are real Python values, never substitutions). For nodes inside an
-**included stock** launch file, the namespace may come from `PushRosNamespace`/substitutions
-resolved only at launch time — so wildcard *remappings* cannot reliably reach in there. Params
-still can: hand the merged param file through and let rcl match.
+**Gotcha, learned the hard way:** a remapping's "from" side is the name **as the node uses it**,
+so a node in a namespace needs the relative spelling (`turtle1/cmd_vel`, not `/turtle1/cmd_vel`).
+ROS's rule, not ours — but the demo config got it wrong first and silently remapped nothing.
 
-### `$(...)` substitutions in config files (Q25) — OPEN, designed, not built
+### `$(...)` substitutions in config files (Q25) — BUILT (2026-09-27)
 
-Wanted: `$(find-pkg-share pkg)`, `$(find-pkg-prefix pkg)`, `$(env VAR [default])` inside YAML
-values, per the substitution list in
-[the roslaunch XML article](https://design.ros2.org/articles/roslaunch_xml.html).
+`$(find-pkg-share pkg)`, `$(find-pkg-prefix pkg)`, `$(env VAR [default])`, `$(command ...)`,
+`$(eval ...)` and the rest of the vocabulary in [the roslaunch XML
+article](https://design.ros2.org/articles/roslaunch_xml.html) work in any config value.
 
-**Do not write a parser, and do not use `ParameterFile`.** `launch.frontend.parse_substitution`
-is the real lark-grammar parser the XML/YAML launch frontends use, and it works standalone
-against a bare `LaunchContext()`. Verified: `$(find-pkg-share turtlesim)` →
-`/opt/ros/jazzy/share/turtlesim`, `$(find-pkg-prefix turtlesim)` → `/opt/ros/jazzy`,
-`$(env HOME)/maps/x.yaml`, `$(env NOT_SET default_val)` → `default_val`, `$(eval '3 * 14')` →
-`42`, `$(command 'echo hi')` → `hi\n`. Zero parser code, the whole documented vocabulary for
-free, and `lark` is already a hard dependency of `launch` itself.
+**No parser of our own, and not `ParameterFile`.** `launch.frontend.parse_substitution` is the
+real lark grammar behind the XML/YAML launch frontends, and it works standalone against a bare
+`LaunchContext()` (evidence in the Reference section below) — so the vocabulary is ROS's with no
+grammar of ours to maintain, and `lark` is already a hard dependency of `launch`. Two gotchas: the
+keyword is **`env`**, not `env-var`; and `find-pkg-*` only register once
+**`launch_ros.substitutions` has been imported**.
 
-Two gotchas: the keyword is **`env`**, not `env-var`; and `find-pkg-share`/`find-pkg-prefix`
-live in `launch_ros`, so they only register once **`launch_ros.substitutions` has been
-imported** (bare `launch` gives `Unknown substitution: find-pkg-share`).
+Applied **per string leaf of the parsed YAML**, not to the file text the way
+`ParameterFile(allow_substs=True)` does (it runs the parser over the entire raw file into a temp
+file — which is why `load_config.py` needs `atexit` cleanup). Per-leaf means no temp files, keys
+and structure untouched, and an error naming the offending key rather than `"The substituted
+parameter file is not a valid yaml file"`.
 
-**Apply it per string leaf of the already-parsed YAML, not to the file text.** `ParameterFile
-(allow_substs=True)` runs the parser over the *entire raw file* and writes a temp file (read
-its source: `perform_substitutions(context, parse_substitution(f.read()))`) — which is why
-`load_config.py` needs `atexit` temp-file cleanup. Per-leaf is strictly better for us: no temp
-files, keys and structure untouched (a stray `$` in a comment can't break the parse), errors
-can name the exact key path, and it composes with our existing loader/provenance. Compare
-`ParameterFile`'s failure mode: `"The substituted parameter file is not a valid yaml file"`.
+Open: expanding in keys too (leaning no); `$(dirname)` meaning the config file's directory (cheap
+— push it into the context as a local, and it settles half of Q6). `$(command ...)`/`$(eval ...)`
+run arbitrary code from a config file and are deliberately allowed: same trust level as the launch
+file itself.
 
-Open: whether to expand in keys too (leaning no); whether `$(dirname)` should mean the config
-file's directory (cheap — push it into the context as a local; would also settle half of Q6);
-whether to allow `$(command ...)`/`$(eval ...)` at all, given they run arbitrary code from a
-config file (leaning: allow, same trust level as the launch file itself, but document it).
-
-### Node parameter schemas and introspection (Q24) — OPEN
+### Node parameter schemas and introspection (Q24) — DEFERRED (parked 2026-09-27)
 
 The complaint (2026-09-27): a launch schema that must restate every parameter of every node is
 unwieldy for param-heavy nodes, and with stock ROS you often have to **read a node's source to
@@ -323,20 +293,14 @@ machine uses it; MoveIt itself is not installed here).
   tool **cannot read a third-party package's spec from an install tree** — only from a source
   checkout. This is the decisive constraint on "reuse the node's schema if available".
 
-Consequence: a **Python** node's generated module *is* installed and importable, so it is
-statically introspectable. A **C++** node leaves an installed header (text — parseable, but
-brittle) and its runtime parameter services. So the discovery ladder, best to worst:
-
-1. the node's package ships a **Pydantic model** (tier 2) — importable, zero new machinery;
-2. an **ament index resource** we define, pointing at a schema file the package installs — one
-   `install()` line for the package author, and a `generate_parameter_library` spec YAML is an
-   acceptable format for it (convert on read);
-3. import a `generate_parameter_library`-generated **Python module**, if present;
-4. **runtime `describe_parameters`** — needs the node running, so: `params-scaffold` codegen and
-   a `--verify` mode, not a load-time path.
-
-Worth interoping with rather than competing: if a package already has a spec YAML, the only ask
-is that it install it.
+Consequence for discovery, best to worst: a package that ships a **Pydantic model** (tier 2) is
+importable with no new machinery; an **ament index resource** we define could point at a spec file
+the package installs (one `install()` line for its author, and a `generate_parameter_library` spec
+is an acceptable format — convert on read); a **Python** node's generated module *is* installed and
+importable, so statically introspectable; a **C++** node leaves only an installed header (text,
+parseable but brittle) and its runtime services, which is tier 3's territory. Worth interoperating
+with rather than competing against: if a package already has a spec YAML, the only ask is that it
+install it.
 
 **Framing to adopt:** our schema describes the **launch's** interface — structure, toggles,
 cross-node coupling — not a mirror of every node's parameters. Those are two different

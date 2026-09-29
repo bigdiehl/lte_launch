@@ -50,11 +50,20 @@ def sample_launch(tmp_path):
 
 @pytest.fixture
 def write(tmp_path):
-    """write("name.yaml", "text") -> path"""
+    """write("name.yaml", "map: m\\n") -> path
 
-    def _write(name, text):
+    The text is the launch's own settings; it gets nested under ``launch_args:``
+    for you, since that is where every schema value lives now. Pass
+    ``raw=True`` to write the file exactly as given -- for node-pattern
+    sections, or to test the file shape itself.
+    """
+
+    def _write(name, text, raw=False):
         path = tmp_path / name
-        path.write_text(textwrap.dedent(text))
+        text = textwrap.dedent(text)
+        if not raw:
+            text = "launch_args:\n" + textwrap.indent(text, "  ")
+        path.write_text(text)
         return str(path)
 
     return _write

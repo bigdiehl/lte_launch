@@ -19,30 +19,43 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import traceback
+from pathlib import Path
 from typing import Any
 
 import yaml
 
 from . import config as cfg
+from . import effective
 from . import loader
+from . import ros_config as rc
 from . import schema
 from .core import TypedLaunch
 
 PROG = "tlaunch"
+WARN = f"{PROG}: warning:"
 USAGE = (
     f"{PROG} [launch options] <package> <file> [launch arguments]\n"
     f"       {PROG} [launch options] <path/to/standalone_launch.py> [launch arguments]"
 )
 
-# tlaunch's own options; schema fields must not collide with these.
-OWN_WITH_VALUE = {"--config", "--launch-prefix", "--launch-prefix-filter"}
+# tlaunch's own options; schema fields must not collide with these. Every option
+# added from here on is hyphenated, which a Python identifier cannot be, so it
+# can never collide with a schema field (Q18).
+OWN_WITH_VALUE = {
+    "--config", "--launch-prefix", "--launch-prefix-filter",
+    "--ros-param", "--ros-remap",
+}
 OWN_FLAGS = {
     "-h", "--help", "--schema", "--show-config",
-    "-n", "--noninteractive", "-d", "--debug",
+    "-n", "--noninteractive", "-d", "--debug", "--strict",
 }
 RESERVED = OWN_WITH_VALUE | OWN_FLAGS
+
+# What --ros-param/--ros-remap take, for their metavar and their error message.
+ROS_CLI_SHAPE = {"param": "[PATTERN:]NAME=VALUE", "remap": "[PATTERN:]FROM=TO"}
 
 
 class TlaunchError(Exception):
@@ -257,7 +270,9 @@ def add_own_args(parser: argparse.ArgumentParser):
     )
     g.add_argument(
         "-d", "--debug", action="store_true", dest="$debug",
-        help="verbose launch output and Python tracebacks",
+        help="verbose launch output, Python tracebacks, and advisory config "
+        "warnings (a node pattern that matched nothing, a typed field shadowing "
+        "an untyped one)",
     )
     g.add_argument(
         "--launch-prefix", metavar="CMD", dest="$launch_prefix",
@@ -266,6 +281,25 @@ def add_own_args(parser: argparse.ArgumentParser):
     g.add_argument(
         "--launch-prefix-filter", metavar="REGEX", dest="$launch_prefix_filter",
         help="only apply --launch-prefix to executables matching this regex",
+    )
+    g.add_argument(
+        "--ros-param", action="append", default=[], dest="$ros_param",
+        metavar=ROS_CLI_SHAPE["param"],
+        help="set a ROS parameter on the nodes matching PATTERN (a node pattern "
+        "like /**, /**/planner or /ns/*; default /**); values are parsed as "
+        "YAML; repeatable, and overrides --config files",
+    )
+    g.add_argument(
+        "--ros-remap", action="append", default=[], dest="$ros_remap",
+        metavar=ROS_CLI_SHAPE["remap"],
+        help="remap a topic/service on the nodes matching PATTERN (default /**); "
+        "repeatable. ROS itself cannot do this with a wildcard; tlaunch matches "
+        "the pattern and passes each node concrete rules",
+    )
+    g.add_argument(
+        "--strict", action="store_true", dest="$strict",
+        help="refuse untyped ROS parameters and remappings, and make every "
+        "config warning an error: the schema must then describe everything",
     )
 
 
@@ -307,46 +341,127 @@ def _issue_lines(issues: list[schema.Issue], as_flags: bool) -> list[str]:
     return lines
 
 
-def layer_config(model: type, files: list[str], cli: dict[str, Any]):
-    """-> (merged dict, {leaf path: source label})"""
+def parse_ros_cli(values: list[str], kind: str) -> list[rc.Section]:
+    """``--ros-param '[pattern:]name=value'`` -> one section per value.
+
+    The pattern is optional and defaults to ``/**`` (every node). ROS names
+    contain no ``:``, so the first colon, when there is one, separates them.
+    """
+    sections = []
+    for raw in values:
+        head, sep, rest = raw.partition(":")
+        pattern, body = (head, rest) if sep else ("/**", raw)
+        key, eq, value = body.partition("=")
+        if not eq or not key:
+            raise TlaunchError(f"--ros-{kind} '{raw}': expected {ROS_CLI_SHAPE[kind]}")
+        if kind == "param":
+            try:
+                parsed = yaml.safe_load(value)
+            except yaml.YAMLError as exc:
+                raise TlaunchError(
+                    f"--ros-param '{raw}': cannot parse '{value}' as YAML: {exc}"
+                ) from None
+            sections.append(rc.Section(pattern, {key: parsed}, {}, source="cli"))
+        else:
+            sections.append(rc.Section(pattern, {}, {key: value}, source="cli"))
+    return sections
+
+
+def layer_config(model: type, files: list[str], cli: dict[str, Any], own: dict):
+    """-> (merged launch_args, {leaf path: source label}, RosConfig)"""
     specs = schema.walk(model)
     sources: dict[tuple[str, ...], str] = {}
     merged: dict = {}
+    sections: list[rc.Section] = []
 
     problems: list[str] = []
     for ref in files:
         data = cfg.load_config_file(cfg.resolve_config_ref(ref))
-        issues = schema.unknown_keys(model, data)
+        launch_args, file_sections = cfg.split_file(data, ref)
+        sections.extend(file_sections)
+        issues = schema.unknown_keys(model, launch_args)
         if issues:
             problems.append(f"in config file '{ref}':")
             problems.extend(_issue_lines(issues, as_flags=False))
         for spec in specs:
-            if cfg.lookup(data, spec.path)[0]:
+            if cfg.lookup(launch_args, spec.path)[0]:
                 sources[spec.path] = ref
-        merged = cfg.deep_merge(merged, data)
+        merged = cfg.deep_merge(merged, launch_args)
     if problems:
         raise TlaunchError("\n".join(problems))
 
     merged = cfg.deep_merge(merged, cfg.nest(cli))
     for dotted in cli:
         sources[tuple(dotted.split("."))] = "cli"
-    return merged, sources
+
+    # The CLI is the last word for the untyped lanes too.
+    sections.extend(parse_ros_cli(own["ros_param"], "param"))
+    sections.extend(parse_ros_cli(own["ros_remap"], "remap"))
+
+    ros = rc.RosConfig(sections, debug=own["debug"])
+    if own["strict"] and ros:
+        raise TlaunchError(
+            "--strict, but config carries untyped node sections:\n"
+            + "\n".join(f"  {s.pattern}  ({s.source})" for s in ros.sections)
+            + "\ndeclare these as a RosParams model in the launch's schema, "
+            "or drop --strict"
+        )
+    return merged, sources, ros
 
 
-def print_effective(model: type, config: Any, sources: dict) -> None:
-    plain = schema.to_plain(config)
-    specs = schema.walk(model)
-    width = max((len(s.dotted) for s in specs), default=0)
-    for spec in specs:
-        _, value = cfg.lookup(plain, spec.path)
-        src = sources.get(spec.path, "default")
-        print(f"{spec.dotted:<{width}} = {json.dumps(value)}  ({src})")
+def save_effective(text: str, label: str) -> str:
+    """Write the effective config where it can be read after the fact.
+
+    Every run leaves one behind, so "what config did that actually launch with?"
+    is always answerable -- and the file is a valid ``--config`` input, so the
+    same run can be reproduced from it.
+    """
+    import tempfile
+
+    name = re.sub(r"\W+", "_", label).strip("_") or "launch"
+    directory = Path(tempfile.gettempdir()) / "tlaunch"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{name}-{os.getpid()}.yaml"
+    path.write_text(text)
+    return str(path)
 
 
 # --------------------------------------------------------------------------
 # 4. Run
 # --------------------------------------------------------------------------
-def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any]) -> int:
+def warn_unmatched(ros: rc.RosConfig, own: dict) -> None:
+    """A node pattern that reached no node is usually a typo -- but it can also be
+    config for a node behind a disabled toggle, or aimed at a stock `Node` that
+    does not collect config at all. So it is an error only under ``--strict``,
+    and otherwise printed only under ``-d``: quiet by default, because it changes
+    nothing about the launch. ``--show-config`` reports the same thing in full,
+    per section, which is the place to go looking on purpose."""
+    unmatched = ros.unmatched()
+    if not unmatched:
+        return
+    message = (
+        "node section(s) matched no node in this launch:\n"
+        + "\n".join(f"  {s.pattern}  ({s.source})" for s in unmatched)
+        + "\n  (a node is only matchable if it is created with node(...) and given "
+        "a name)"
+    )
+    if own["strict"]:
+        raise TlaunchError(message)
+    if own["debug"]:
+        print(f"{WARN} {message}", file=sys.stderr)
+
+
+def build_actions(typed: TypedLaunch, config: Any, ros: rc.RosConfig, own: dict) -> list:
+    """Build the launch's actions with the untyped lanes active, so `node()` can
+    pick up whatever is aimed at each node."""
+    with rc.active(ros):
+        actions = list(typed.build(config))
+    warn_unmatched(ros, own)
+    return actions
+
+
+def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any],
+               ros: rc.RosConfig, sources: dict, label: str) -> int:
     import launch
     from launch.actions import SetLaunchConfiguration
 
@@ -357,7 +472,14 @@ def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any]) -> int:
         actions.append(
             SetLaunchConfiguration("launch-prefix-filter", own["launch_prefix_filter"])
         )
-    actions.extend(typed.build(config))
+    actions.extend(build_actions(typed, config, ros, own))
+
+    # Written after the build, so the node patterns' matches are known. Printed
+    # in launch's own style, before its output starts scrolling.
+    saved = save_effective(
+        effective.render(typed.config_type, config, sources, ros, label), label
+    )
+    print(f"[INFO] [{PROG}]: effective config written to {saved}")
 
     service = launch.LaunchService(
         noninteractive=own["noninteractive"], debug=own["debug"]
@@ -401,7 +523,7 @@ def _main(argv: list[str]) -> int:
         return 0
 
     try:
-        merged, sources = layer_config(typed.config_type, files, ns)
+        merged, sources, ros = layer_config(typed.config_type, files, ns, own)
         config = schema.validate(typed.config_type, merged)
     except cfg.ConfigFileError as exc:
         raise TlaunchError(str(exc)) from None
@@ -411,11 +533,19 @@ def _main(argv: list[str]) -> int:
             + "\n".join(_issue_lines(exc.issues, as_flags=True))
         ) from None
 
+    label = " ".join(target)
     if own["show_config"]:
-        print_effective(typed.config_type, config, sources)
+        if ros:
+            # Building is what resolves the node patterns, so do it (the actions
+            # are discarded) to report which nodes each section actually reached.
+            build_actions(typed, config, ros, own)
+        print(
+            effective.render(typed.config_type, config, sources, ros, label),
+            end="",
+        )
         return 0
 
-    return run_launch(typed, config, own)
+    return run_launch(typed, config, own, ros, sources, label)
 
 
 def main(argv: list[str] | None = None) -> int:

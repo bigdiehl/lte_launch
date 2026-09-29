@@ -1,10 +1,13 @@
 # Example config for launch.turtle_demo_launch (mirrors TurtleDemoConfig).
-turtlesim:
-  namespace: blue
-  background_r: 10
-  background_g: 20
-  background_b: 200
-localization:
-  params:
-    x: 1.0
-    y: 2.0
+# The launch's own settings live under launch_args:; node parameters and
+# remappings go in top-level node-pattern sections (see quiet.yaml).
+launch_args:
+  turtlesim:
+    namespace: blue
+    background_r: 10
+    background_g: 20
+    background_b: 200
+  localization:
+    params:
+      x: 1.0
+      y: 2.0

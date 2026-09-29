@@ -20,17 +20,17 @@ def test_nest_and_lookup():
 
 
 def test_load_config_file(write):
-    assert cfg.load_config_file(write("c.yaml", "a: 1\nb: {c: 2}\n")) == {
+    assert cfg.load_config_file(write("c.yaml", "a: 1\nb: {c: 2}\n", raw=True)) == {
         "a": 1,
         "b": {"c": 2},
     }
-    assert cfg.load_config_file(write("empty.yaml", "")) == {}
+    assert cfg.load_config_file(write("empty.yaml", "", raw=True)) == {}
 
 
 @pytest.mark.parametrize("text", ["- 1\n- 2\n", "just a string\n", "a: [unclosed\n"])
 def test_load_config_file_rejects_bad_files(write, text):
     with pytest.raises(cfg.ConfigFileError):
-        cfg.load_config_file(write("bad.yaml", text))
+        cfg.load_config_file(write("bad.yaml", text, raw=True))
 
 
 def test_load_config_file_missing():

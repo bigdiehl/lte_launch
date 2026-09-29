@@ -46,6 +46,25 @@ MISSING = object()
 SCALARS = {int: "INT", float: "FLOAT", str: "TEXT", Path: "PATH"}
 
 
+class RosParams(BaseModel):
+    """Base class for a config section that *is* a node's ROS parameters.
+
+    A plain nested model is launch config -- it shapes what the launch does. A
+    ``RosParams`` model says "these fields are parameters of a node", so they can
+    be handed to ``node(..., params=config.section)`` and reach the node without
+    being restated anywhere. They are ordinary schema fields otherwise: flags,
+    help, defaults and validation all work as usual, which is the whole point --
+    the same parameters an untyped ``ros__parameters:`` block would carry, but
+    typed and documented.
+    """
+
+
+def is_ros_params(value: Any) -> bool:
+    return isinstance(value, RosParams) or (
+        isinstance(value, type) and issubclass(value, RosParams)
+    )
+
+
 @dataclass
 class FieldSpec:
     """One leaf field of a (possibly nested) config model."""

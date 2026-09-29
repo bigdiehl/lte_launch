@@ -1,5 +1,9 @@
 # Overlay: later --config files override earlier ones, key by key.
-turtlesim:
-  background_b: 90      # overrides blue_turtle.yaml
-teleop:
-  enabled: false
+# (For the ros__parameters / ros__remappings lanes, see params_demo.yaml --
+# turtle_demo_launch.py builds its nodes with stock Node, which does not collect
+# them, so a node section here would only warn that it matched nothing.)
+launch_args:
+  turtlesim:
+    background_b: 90      # overrides blue_turtle.yaml
+  teleop:
+    enabled: false

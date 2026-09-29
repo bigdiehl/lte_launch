@@ -32,6 +32,32 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   starts; unknown YAML keys are errors. A config is a path or `<package>:<path>` (looked
   up via the package's share dir via `ament_index_python`, independent of launch-file
   resolution above).
+- **A config file has two parts.** The launch's own settings go under **`launch_args:`**
+  (required; a bare schema key at the top level errors with the fix). Every other top-level
+  key is a **node pattern** (`/**`, `/**/planner`, `/ns/*` — `*` is one token, `**` zero or
+  more, as in a ROS parameter file) holding **`ros__parameters:`** and/or
+  **`ros__remappings:`** — untyped ROS data passed straight to the matching nodes, needing
+  no schema at all. That is the answer to param-heavy nodes: you never restate 100 fields.
+  `--ros-param '[PATTERN:]name=value'` / `--ros-remap '[PATTERN:]from=to'` are the CLI
+  equivalents (pattern defaults to `/**`, values parsed as YAML). `$(...)` in any value is
+  expanded at load time by the **stock** launch parser — `$(find-pkg-share p)`,
+  `$(env VAR [default])`, `$(command ...)`, `$(eval ...)`; see `subst.py`.
+- **`node(...)`** (our wrapper over `launch_ros`'s `Node`) is what collects it, merging every
+  matching section into that node's parameters/remappings. `params=` takes a **`RosParams`**
+  model — a schema section that *is* a node's ROS parameters, declared once and delivered
+  without restating. Typed beats untyped on a clash; a pattern matching no launched node is
+  not an error (it may target a disabled node, or a stock `Node`). Both are advisory and so
+  **quiet unless `-d`**; `--strict` makes them errors and refuses the untyped lane. Plain
+  stock `Node` still works, it just collects nothing. Wildcard *remappings* are ours: rcl
+  does `/**` for parameters but rejects it for remap rules outright.
+- **`--show-config` prints the effective config as a config file** — the same YAML **every
+  run writes** to `/tmp/tlaunch/<launch>-<pid>.yaml` and logs, so "what did that actually
+  launch with?" is always answerable, and the answer is valid `--config` input (it
+  round-trips). Provenance sits on every value, in the node sections exactly as in
+  `launch_args` (`# default`, `# <file>`, `# cli`, `, shadowed by a typed field`), with
+  matched nodes on the pattern (`# -> /ns/node`, or `# -> NO MATCH` — which is where you
+  look for a typo'd pattern). The two lanes keep their own keys; sections sharing a pattern
+  merge into one block, so there are never duplicate YAML keys. Renderer: `effective.py`.
 - **Both packages build with `ament_cmake`/`ament_cmake_python`**, not `ament_python` —
   needed to install `launch/` as a nested subpackage while keeping it at a top-level,
   ROS-conventional path.
@@ -63,9 +89,10 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   silently truncates to `1`) and `Optional[X]` with no default is silently optional, not
   required. Full comparison and rationale: `design-notes.md`.
 - **Deferred (do not work on unless asked):** tmux (would use `~/projects/libtmux_easy`,
-  a separate repo with known bugs — don't modify without asking); overrides (per-node
-  params/remaps/prefixes); pluggable schema backends / darts `InputDict` (needs
-  `python3-darts-core`, not installable here).
+  a separate repo with known bugs — don't modify without asking); pluggable schema backends
+  / darts `InputDict` (needs `python3-darts-core`, not installable here); **node-defined
+  parameter schemas** (Q24 — a node shipping its schema so a launch can look it up instead
+  of restating it; explicitly parked 2026-09-27, the untyped lane covers the need for now).
 - **Interested, not started:** units (`--robot.radius "22 cm"`); plan in
   `schema-interface-and-input-dict.md`, decisions U1–U6 pending.
 - License is not a concern for now.
@@ -88,16 +115,20 @@ Two **`ament_cmake`** packages under `src/`:
     find and import a launch, by package+bare-filename search, an explicit
     dotted/on-disk-slash path, or a standalone file path), `schema.py` (**all** Pydantic
     access), `config.py` (YAML, `<package>:<path>` refs, merge), `core.py` (`@launch`,
-    `TypedLaunch`), `actions.py` (`include`, `stock_args`). `test/` — pytest suite (73 tests).
+    `TypedLaunch`), `actions.py` (`include`, `node`, `stock_args`), `ros_config.py`
+    (node patterns + the untyped `ros__parameters`/`ros__remappings` lanes), `subst.py`
+    (`$(...)` expansion), `effective.py` (the effective config as a loadable YAML file).
+    `test/` — pytest suite (109 tests).
 - `ros2_typed_launch_demo/` — demo.
   - `package.xml`/`CMakeLists.txt`: installs the base package, *and* the top-level
     `launch/` directory as a subpackage nested under it (`ament_python_install_package(launch
     PACKAGE_DIR launch DESTINATION ${PYTHON_INSTALL_DIR}/${PROJECT_NAME})` — the trick
     behind the layout below).
   - `launch/`: `turtle_demo_launch.py`, `turtle_teleop_launch.py`,
-    `localization_launch.py`, `turtle_showcase_launch.py`, `stock_include_launch.py` —
+    `localization_launch.py`, `turtle_showcase_launch.py`, `stock_include_launch.py`,
+    `turtle_params_launch.py` (typed `RosParams` + the untyped lanes via `node()`) —
     ordinary submodules of `ros2_typed_launch_demo.launch`, importing each other directly;
-    `__init__.py` re-exports all five.
+    `__init__.py` re-exports all six.
   - `config/*.yaml` — example `--config` files, installed to the share dir (unaffected
     by where the Python launch files live).
   - `stock_launch/spawn_turtle.launch.py` — a traditional (untyped) launch file, installed
@@ -130,6 +161,10 @@ tlaunch ros2_typed_launch_demo turtle_demo_launch.py \
     --config ros2_typed_launch_demo:config/quiet.yaml \
     --turtlesim.background_r 99 --show-config                        # layering + provenance, no launch
 tlaunch ros2_typed_launch_demo turtle_showcase_launch.py -h          # namespaces, params, timers, ...
+tlaunch ros2_typed_launch_demo turtle_params_launch.py \
+    --config ros2_typed_launch_demo:config/params_demo.yaml --show-config
+                        # typed RosParams + untyped ros__parameters/ros__remappings,
+                        # with which node pattern matched which node
 tlaunch <file_launch.py> --schema                                    # JSON Schema
 ```
 
@@ -169,6 +204,12 @@ timeout --foreground -s INT 20 tlaunch ... > log 2>&1
   `ros2 topic echo /tf_static --once`; `ros2 node list`; `ros2 node info /<ns>/turtlesim`.
 - `package.xml` comments must never contain `--` anywhere (not just as the closing
   delimiter) — invalid XML, fails with an unhelpful "not well-formed (invalid token)".
+- A `ros__remappings` "from" side is the name **as the node uses it**, so a node in a
+  namespace needs the relative spelling (`turtle1/cmd_vel`, not `/turtle1/cmd_vel`). ROS's
+  rule, not ours; the wrong form silently remaps nothing.
+- A node is only matchable by a node pattern if it is built with `node(...)` **and given a
+  `name`** — matching uses the declared `name`/`namespace`, so an enclosing
+  `PushRosNamespace` or a runtime-chosen name is invisible to it.
 - After a schema shape changes (a field moves into a nested model), update any
   `--config` YAML that used the old shape — `tlaunch` catches a stale key as "unknown
   key", but only when that file is actually used again.

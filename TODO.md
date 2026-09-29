@@ -23,12 +23,24 @@ Eventually I'd like to incorporate some sort of node/launch manager. Framed as a
 
 
 4. Interface with traditional ROS2 launch
-    - Can include standard launch files. Convert args to supported format
+    - [DONE] Can include standard launch files. Convert args to supported format
+      -- actions.stock_args + stock_include_launch.py; see design-notes.md Q17
     - Standard launches can include us? Might be harder
+      -- still open, and still looks not worth it: typed files reject stock `ros2 launch`
 
 Other
-    - Method for loading params/remaps from config file
-    - Multiple configs, merged together. Showing source from each
+    - [DONE] Method for loading params/remaps from config file
+      -- ros__parameters / ros__remappings under node patterns, via node(); Q8
+    - [DONE] Multiple configs, merged together. Showing source from each
+      -- --show-config prints every value with its source
     - Cleanup --help
-    - Support $(command arg) syntax in config files
-    
+    - [DONE] Support $(command arg) syntax in config files
+      -- and find-pkg-share/find-pkg-prefix/env/eval, via the stock launch parser; Q25
+
+
+Setting of log verbosity level? (e.g. to debug?)
+
+log all final commands, remappings, parameters
+    - [PARTLY] parameters/remappings and the whole effective config are written to
+      /tmp/tlaunch/<launch>-<pid>.yaml on every run, and the path is logged.
+      Still missing: the final process command lines (stock launch's --print).

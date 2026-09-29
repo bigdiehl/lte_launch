@@ -1,4 +1,10 @@
-"""Config sources and layering: defaults < --config files (in order) < CLI."""
+"""Config sources and layering: defaults < --config files (in order) < CLI.
+
+A config file has two parts: the launch's own settings under ``launch_args:``
+(validated against its schema) and node-pattern sections carrying ROS parameters
+and remappings (untyped, see ``ros_config.py``). ``$(...)`` in any value is
+expanded when the file is read (see ``subst.py``).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,9 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from . import ros_config as rc
+from . import subst
 
 
 class ConfigFileError(ValueError):
@@ -52,7 +61,10 @@ def resolve_config_ref(ref: str) -> str:
 
 
 def load_config_file(path: str) -> dict:
-    """Read a YAML config file; the top level must be a mapping."""
+    """Read a YAML config file; the top level must be a mapping.
+
+    ``$(...)`` substitutions are expanded here, once, for the whole file.
+    """
     try:
         text = Path(path).read_text()
     except OSError as exc:
@@ -67,7 +79,44 @@ def load_config_file(path: str) -> dict:
         raise ConfigFileError(
             f"config file '{path}' must contain a mapping at the top level"
         )
-    return data
+    try:
+        return subst.expand(data, path)
+    except subst.SubstitutionError as exc:
+        raise ConfigFileError(str(exc)) from None
+
+
+def split_file(data: dict, source: str) -> tuple[dict, list[rc.Section]]:
+    """One loaded config file -> (launch_args, node sections).
+
+    The launch's own settings live under ``launch_args:``; every other top-level
+    key must be a node pattern (see ``ros_config.is_node_pattern``). A bare
+    schema key at the top level is the pre-``launch_args`` file shape, and gets
+    an error saying so rather than being silently ignored.
+    """
+    launch_args = data.get(rc.LAUNCH_ARGS_KEY, {})
+    if launch_args is None:
+        launch_args = {}
+    if not isinstance(launch_args, dict):
+        raise ConfigFileError(
+            f"in '{source}': '{rc.LAUNCH_ARGS_KEY}' must be a mapping"
+        )
+
+    stray = [
+        key for key, value in data.items()
+        if key != rc.LAUNCH_ARGS_KEY and not rc.is_node_pattern(key, value)
+    ]
+    if stray:
+        raise ConfigFileError(
+            f"in '{source}': top-level key(s) {', '.join(repr(s) for s in stray)} "
+            f"are neither '{rc.LAUNCH_ARGS_KEY}' nor a node pattern; this launch's "
+            f"own settings now go under '{rc.LAUNCH_ARGS_KEY}:', and node "
+            f"parameters under a pattern like '/**:' with '{rc.PARAMS_KEY}:'"
+        )
+
+    try:
+        return launch_args, rc.parse_sections(data, source)
+    except rc.RosConfigError as exc:
+        raise ConfigFileError(str(exc)) from None
 
 
 def deep_merge(base: dict, over: dict) -> dict:

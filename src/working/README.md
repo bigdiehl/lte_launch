@@ -2,7 +2,7 @@
 
 `ros2_typed_launch` gives ROS 2 typed, schema-driven launch files: a Pydantic model is the
 interface of a launch, and the `tlaunch` command turns it into a command line, YAML config
-layering and validation. Status: **working prototype**, Jazzy, 73 unit tests, `ament_cmake`.
+layering and validation. Status: **working prototype**, Jazzy, 109 unit tests, `ament_cmake`.
 
 ## Quick start (run the demo)
 
@@ -56,11 +56,14 @@ headless/scripted use: `../CLAUDE.md` (one level up, at the repo's `src/`).
   (not a `share/launch/` copy), re-exported from `launch/__init__.py`, and include each
   other with ordinary `import`; Pydantic **1** (system); tab completion (`argcomplete`);
   five demo launches; 73 tests.
-- **Designed, not built (active front):** config-driven node parameters and remappings under
-  ROS-native node patterns (`/**`, `/**/node`) with wildcards interpreted by us — Q8; `$(...)`
-  substitutions in config values, reusing the stock launch parser — Q25; node parameter schemas
-  and introspection — Q24.
-- **Deferred by you:** units, pluggable schema backends / `InputDict`, tmux.
-- **Needs decisions:** see `design-notes.md`'s open questions — most immediately Q8's four
-  (is `launch_args:` required, node patterns top-level or nested, error on a no-match pattern,
-  how the data reaches nodes), then supported distros, option-name rule, config polish.
+- **Built (2026-09-27/28):** config files have a `launch_args:` section plus top-level node
+  patterns carrying `ros__parameters`/`ros__remappings`, matched by us (ROS has no wildcard
+  remapping at all) and delivered through the `node()` wrapper; `RosParams` for typed node
+  parameters; `--ros-param`/`--ros-remap`/`--strict`; `$(...)` expansion via the stock launch
+  parser; `--show-config` renders a round-trippable config file, which every run also saves
+  to `/tmp/tlaunch/` (Q8, Q25). Verified against live nodes.
+- **Deferred by you:** units, pluggable schema backends / `InputDict`, tmux, node-defined
+  parameter schemas (Q24 — parked 2026-09-27).
+- **Needs decisions:** see `design-notes.md`'s open questions — supported distros,
+  option-name rule, config polish, and Q8's remaining edges (namespace from an enclosing
+  `PushRosNamespace` is not seen by pattern matching yet).

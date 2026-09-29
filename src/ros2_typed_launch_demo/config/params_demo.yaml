@@ -1,0 +1,32 @@
+# The three parts of a config file, for turtle_params_launch.py.
+
+# 1. The launch's own settings, validated against its schema.
+launch_args:
+  namespace: demo
+  turtlesim:
+    background_g: 120          # a typed ROS parameter (RosParams)
+
+# 2./3. Untyped ROS parameters and remappings, keyed by node pattern. These need
+# no schema, which is the point: a node with a hundred parameters costs nothing
+# here. "*" is one token, "**" is zero or more, as in a ROS parameter file.
+/**:
+  ros__parameters:
+    use_sim_time: false
+
+/demo/turtlesim:
+  ros__parameters:
+    # Deliberately in conflict: holonomic is also a typed field of the schema,
+    # so the typed value wins and tlaunch warns, naming both.
+    holonomic: true
+  ros__remappings:
+    # The "from" side is the name *as the node uses it*, so a relative name for
+    # a node in a namespace -- turtlesim subscribes to turtle1/cmd_vel, which
+    # resolves to /demo/turtle1/cmd_vel. Writing "/turtle1/cmd_vel" here would
+    # match nothing (ROS remap rules, not ours).
+    turtle1/cmd_vel: /joy_vel
+
+# A pattern that matches nothing warns rather than failing -- it may be aimed at
+# a node behind a disabled toggle. --strict turns that into an error.
+/demo/not_launched:
+  ros__parameters:
+    unused: 1

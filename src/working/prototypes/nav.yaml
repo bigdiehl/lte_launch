@@ -1,7 +1,8 @@
-map: maps/office.yaml
-robot:
-  name: rover1
-  use_sim_time: true
-planner:
-  algorithm: navfn
-  tolerance: 0.25
+launch_args:
+  map: maps/office.yaml
+  robot:
+    name: rover1
+    use_sim_time: true
+  planner:
+    algorithm: navfn
+    tolerance: 0.25
