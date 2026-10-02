@@ -75,6 +75,16 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   `importlib.import_module` under the hood) is only for a launch chosen dynamically or
   from another package. `include(child, config)` builds the child eagerly and returns a
   scoped `GroupAction`; the parent's namespace/params/remaps/env are inherited.
+- **Every run watches the processes it starts** (`monitor.py`): pid, command, node name and exit
+  status per process. A death nobody asked for (not stopped by us, not during shutdown, non-zero
+  or signalled) gets an `[ERROR] [tlaunch]` line naming the **node** (`/demo/keeper
+  (turtlesim_node-1)`), an end-of-run summary, and a **non-zero exit code** — stock launch
+  returns 0 for a run whose node died, which is the hazard this removes. A oneshot exiting 0 is
+  not a death. `--diagnostics` additionally publishes `DiagnosticArray` on `/diagnostics` at
+  1 Hz (named by node FQN, process name in `values`); it is opt-in because it needs an rclpy
+  node inside the launch. **Direct children only** — a wrapper script's children and composable
+  nodes (threads, no pid) are out of reach. Sessions use the same monitor, so there is one
+  implementation. See design-notes Q27, `flaky_demo_launch.py`.
 - **A launch can instead be an imperative script**: `@script(config=Model)` over a
   `(session, config)` function, run with `tlaunch <package> <file>` **or** `python3 <file>`
   (`target.main()`). `session.start(target)` queues a **stage** and returns a handle —
@@ -130,8 +140,9 @@ Two **`ament_cmake`** packages under `src/`:
     `main()`), `actions.py` (`include`, `node`, `stock_args`), `ros_config.py`
     (node patterns + the untyped `ros__parameters`/`ros__remappings` lanes), `subst.py`
     (`$(...)` expansion), `effective.py` (the effective config as a loadable YAML file),
-    `session.py` (imperative launching: `Session`/`Stage`/`Process`/`run_session`).
-    `test/` — pytest suite (132 tests).
+    `session.py` (imperative launching: `Session`/`Stage`/`Process`/`run_session`),
+    `monitor.py` (process tracking, the death report and `/diagnostics`).
+    `test/` — pytest suite (143 tests).
 - `ros2_typed_launch_demo/` — demo. **`README.md` lists every demo with its commands** —
   keep it updated when a demo is added or its flags change.
   - `package.xml`/`CMakeLists.txt`: installs the base package, *and* the top-level
@@ -141,9 +152,10 @@ Two **`ament_cmake`** packages under `src/`:
   - `launch/`: `turtle_demo_launch.py`, `turtle_teleop_launch.py`,
     `localization_launch.py`, `turtle_showcase_launch.py`, `stock_include_launch.py`,
     `turtle_params_launch.py` (typed `RosParams` + the untyped lanes via `node()`), and
-    `turtle_bringup_script.py` (**imperative**: `@script`, stages, graph checks, restart) —
+    `turtle_bringup_script.py` (**imperative**: `@script`, stages, graph checks, restart),
+    `flaky_demo_launch.py` (a process that dies, to show the death report) —
     ordinary submodules of `ros2_typed_launch_demo.launch`, importing each other directly;
-    `__init__.py` re-exports all seven.
+    `__init__.py` re-exports all eight.
   - `config/*.yaml` — example `--config` files, installed to the share dir (unaffected
     by where the Python launch files live).
   - `stock_launch/spawn_turtle.launch.py` — a traditional (untyped) launch file, installed
@@ -182,6 +194,8 @@ tlaunch ros2_typed_launch_demo turtle_params_launch.py \
                         # with which node pattern matched which node
 tlaunch ros2_typed_launch_demo turtle_bringup_script.py --settle 2   # imperative script
 python3 src/ros2_typed_launch_demo/launch/turtle_bringup_script.py --no-drive   # same file, direct
+tlaunch ros2_typed_launch_demo flaky_demo_launch.py ; echo "exit: $?"   # death report, exit 1
+tlaunch ros2_typed_launch_demo flaky_demo_launch.py --diagnostics    # + /diagnostics at 1 Hz
 tlaunch <file_launch.py> --schema                                    # JSON Schema
 ```
 
@@ -224,6 +238,13 @@ timeout --foreground -s INT 20 tlaunch ... > log 2>&1
 - A `ros__remappings` "from" side is the name **as the node uses it**, so a node in a
   namespace needs the relative spelling (`turtle1/cmd_vel`, not `/turtle1/cmd_vel`). ROS's
   rule, not ours; the wrong form silently remaps nothing.
+- **A dying process does not change launch's exit code** — `LaunchService.run()` returns 0 even
+  when a process died with rc=3 (verified). Only the `[ERROR] ... process has died` log line
+  says so. See design-notes Q27.
+- **`DiagnosticStatus.level` must be the bytes constant** (`DiagnosticStatus.ERROR` ==
+  `b'\x02'`), never the int `2`: the int passes Python and then **aborts the process** in the C
+  conversion (`Assertion 'PyBytes_Check(field)' failed`). `diagnostic_updater` and
+  `diagnostic_aggregator` are not installed here; `diagnostic_msgs` is.
 - **Testing a Ctrl-C needs care**: `kill -INT <pid>` from a non-interactive shell often does
   not reach the process (and `pkill -f`/a bad `$!` can kill the calling shell — exit 144). The
   reliable way is to have the program signal itself (`os.kill(os.getpid(), SIGINT)`) or

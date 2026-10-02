@@ -42,14 +42,11 @@ from typing import Any, Callable, Iterator
 
 from . import ros_config as rc
 from .core import TypedLaunch
+from .monitor import Monitor, ProcessInfo
 
 #: How often a wait re-checks its predicate even when no launch event arrives.
 #: Waits are woken by events too; this only bounds graph/poll-style predicates.
 POLL = 0.05
-
-#: Lines kept per process, so ``wait_output`` can match a line that went by
-#: before the wait was called (a fast process can print its signal first).
-OUTPUT_LINES = 2000
 
 #: Set in the environment of every process a stage starts, which is how a
 #: process started by an *included* launch file -- whose action we never see --
@@ -133,27 +130,58 @@ def _declared_name(action) -> str | None:
 
 
 class Process:
-    """One launched process: wait on it, read its state, stop it."""
+    """One launched process: wait on it, read its state, stop it.
 
-    def __init__(self, session: "Session", key: str, action=None):
+    The state itself lives in the monitor's record (``monitor.py``), which is the
+    one place process facts are tracked, for sessions and plain runs alike. This
+    is the handle over it.
+    """
+
+    def __init__(self, session: "Session", key: str, info: ProcessInfo):
         self._session = session
         self.key = key
-        self.action = action
-        self.pid: int | None = None
-        self.returncode: int | None = None
-        self.started = False
-        self.exited = False
-        self.cmd: list[str] = []
-        self.process_name: str | None = None
-        self._lines: deque[str] = deque(maxlen=OUTPUT_LINES)
+        self.info = info
+
+    @property
+    def action(self):
+        return self.info.action
+
+    @property
+    def pid(self) -> int | None:
+        return self.info.pid
+
+    @property
+    def returncode(self) -> int | None:
+        return self.info.returncode
+
+    @property
+    def started(self) -> bool:
+        return self.info.started
+
+    @property
+    def exited(self) -> bool:
+        return self.info.exited
+
+    @property
+    def cmd(self) -> list[str]:
+        return list(self.info.cmd)
+
+    @property
+    def process_name(self) -> str | None:
+        return self.info.process_name
+
+    @property
+    def node_name(self) -> str | None:
+        """The node's fully qualified name, once launch has resolved it."""
+        return self.info.node_name
 
     @property
     def running(self) -> bool:
-        return self.started and not self.exited
+        return self.info.running
 
     def output(self) -> list[str]:
-        """The last ``OUTPUT_LINES`` lines this process printed."""
-        return list(self._lines)
+        """The lines this process has printed (the most recent ones)."""
+        return list(self.info.lines)
 
     def wait_started(self, timeout: float | None = None) -> "Process":
         self._session._wait(
@@ -177,7 +205,7 @@ class Process:
         matches = _matcher(pattern)
 
         def found():
-            for line in list(self._lines):
+            for line in self.output():
                 if matches(line):
                     return line
             return None
@@ -188,12 +216,6 @@ class Process:
 
     def stop(self, *, wait: bool = True, timeout: float | None = 10.0) -> "Process":
         """Shut this one process down, leaving the rest of the session running."""
-        if self.action is None:
-            raise SessionError(
-                f"'{self.key}' cannot be stopped on its own: it was started by an "
-                "included launch file, so we never saw its action (stop the stage "
-                "instead)"
-            )
         self._session._stop_actions([self.action])
         if wait and self.running:
             try:
@@ -266,7 +288,8 @@ class Stage:
         while unique in self._processes:
             n += 1
             unique = f"{base}#{n}"
-        process = Process(self._session, unique, action)
+        info = self._session.monitor.track(action, key=base)
+        process = Process(self._session, unique, info)
         self._processes[unique] = process
         return process
 
@@ -358,7 +381,7 @@ class Stage:
     def _reset(self) -> None:
         for process in self._processes.values():
             self._session._by_action.pop(process.action, None)
-        self._processes.clear()
+        self._processes.clear()   # the monitor keeps its records, for the summary
 
     def __repr__(self) -> str:
         return f"<Stage {self.name} ({len(self)} process(es))>"
@@ -372,10 +395,15 @@ class Session:
     launch's.
     """
 
-    def __init__(self, service, *, ros: rc.RosConfig | None = None, debug: bool = False):
+    def __init__(self, service, *, ros: rc.RosConfig | None = None, debug: bool = False,
+                 monitor: Monitor | None = None):
         self._service = service
         self._ros = ros if ros is not None else rc.RosConfig()
         self.debug = debug
+        # One tracking implementation for sessions and plain runs alike; the
+        # session adds handles, stage attribution and the waits on top (Q27).
+        self.monitor = monitor if monitor is not None else Monitor()
+        self.monitor.listen(self._record_changed)
         self._stages: list[Stage] = []
         self._by_action: dict[Any, Process] = {}
         self._by_stage: dict[str, Stage] = {}
@@ -509,6 +537,8 @@ class Session:
         from launch.events.process import ShutdownProcess
 
         for action in actions:
+            # Tell the monitor we asked for this, so it is not reported as a death.
+            self.monitor.note_stop(action)
             self._service.emit_event(ShutdownProcess(process_matcher=matches_action(action)))
 
     def stop_all(self, *, wait: bool = True, timeout: float | None = 10.0) -> None:
@@ -599,69 +629,54 @@ class Session:
         """The launch description that wires the session to the service."""
         import launch
         from launch.actions import OpaqueFunction, RegisterEventHandler
-        from launch.event_handlers import (
-            OnProcessExit,
-            OnProcessIO,
-            OnProcessStart,
-            OnShutdown,
-        )
+        from launch.event_handlers import OnShutdown
 
         return launch.LaunchDescription([
-            RegisterEventHandler(OnProcessStart(on_start=self._on_start)),
-            RegisterEventHandler(OnProcessExit(on_exit=self._on_exit)),
-            RegisterEventHandler(
-                OnProcessIO(on_stdout=self._on_io, on_stderr=self._on_io)
-            ),
+            *self.monitor.handlers(),
             RegisterEventHandler(OnShutdown(on_shutdown=self._on_shutdown)),
             OpaqueFunction(function=self._on_running),
         ])
 
-    def _track(self, event) -> Process:
-        """The handle for the process an event is about, creating one if the
-        process came from an included launch file we never inspected."""
-        existing = self._by_action.get(event.action)
-        if existing is not None:
-            return existing
-        stage = self._by_stage.get((event.env or {}).get(STAGE_ENV, ""))
-        key = event.process_name or "process"
+    def _record_changed(self, info: ProcessInfo) -> None:
+        """A process event reached the monitor: adopt anything new, wake waiters."""
+        with self._changed:
+            if info.action not in self._by_action:
+                self._adopt(info)
+            self._changed.notify_all()
+
+    def _adopt(self, info: ProcessInfo) -> None:
+        """Give a handle to a process we did not build.
+
+        It came from an included launch file, whose actions we never see, so the
+        stage it belongs to is read from the marker its environment carries.
+        """
+        stage = self._by_stage.get((info.env or {}).get(STAGE_ENV, ""))
+        key = info.process_name or info.key
         process = (
-            stage._add(event.action, key=key)
+            stage._add(info.action, key=key)
             if stage is not None
-            else Process(self, key, event.action)
+            else Process(self, key, info)
         )
-        self._by_action[event.action] = process
-        return process
+        self._by_action[info.action] = process
 
     def _on_running(self, context) -> None:
         with self._changed:
             self._running.set()
             self._changed.notify_all()
 
-    def _on_start(self, event, context) -> None:
-        with self._changed:
-            process = self._track(event)
-            process.started = True
-            process.pid = event.pid
-            process.cmd = list(event.cmd or [])
-            process.process_name = event.process_name
-            self._changed.notify_all()
+    # Kept as thin wrappers: the monitor does the recording, and these are the
+    # names the session's own tests drive events through.
+    def _on_start(self, event, context=None) -> None:
+        self.monitor.on_start(event, context)
 
-    def _on_exit(self, event, context) -> None:
-        with self._changed:
-            process = self._track(event)
-            process.started = True
-            process.exited = True
-            process.returncode = event.returncode
-            self._changed.notify_all()
+    def _on_exit(self, event, context=None) -> None:
+        self.monitor.on_exit(event, context)
 
     def _on_io(self, event) -> None:
-        text = event.text.decode(errors="replace") if isinstance(event.text, bytes) else str(event.text)
-        with self._changed:
-            process = self._track(event)
-            process._lines.extend(line for line in text.splitlines() if line)
-            self._changed.notify_all()
+        self.monitor.on_io(event)
 
-    def _on_shutdown(self, event, context) -> None:
+    def _on_shutdown(self, event=None, context=None) -> None:
+        self.monitor.on_shutdown(event, context)
         with self._changed:
             self._interrupted = getattr(event, "due_to_sigint", False)
             self._shutdown.set()
@@ -690,18 +705,24 @@ def run_session(
     ros: rc.RosConfig | None = None,
     noninteractive: bool = False,
     debug: bool = False,
+    diagnostics: bool = False,
 ) -> int:
     """Run ``body(session)`` on a worker thread, with the service on this one.
 
     Must be called from the main thread -- that is launch's rule, not ours.
     Returns the script's exit code: its return value if it returned an int,
-    otherwise the launch service's own. A script that raises propagates.
+    otherwise the launch service's, and non-zero if anything died unexpectedly
+    (Q27). A script that raises propagates.
     """
     import launch
 
+    from . import monitor as mon
+
     service = launch.LaunchService(noninteractive=noninteractive, debug=debug)
-    session = Session(service, ros=ros, debug=debug)
+    monitor = mon.Monitor()
+    session = Session(service, ros=ros, debug=debug, monitor=monitor)
     service.include_launch_description(session.bootstrap())
+    publisher = mon.Diagnostics(monitor) if diagnostics else None
 
     result: dict[str, Any] = {}
 
@@ -718,7 +739,13 @@ def run_session(
 
     thread = threading.Thread(target=worker, name="tlaunch-script", daemon=True)
     thread.start()
-    service_rc = service.run(shutdown_when_idle=False)
+    if publisher is not None:
+        publisher.start()
+    try:
+        service_rc = service.run(shutdown_when_idle=False)
+    finally:
+        if publisher is not None:
+            publisher.stop()
     thread.join(timeout=15.0)
 
     error = result.get("error")
@@ -730,4 +757,5 @@ def run_session(
     if error is not None:
         raise error
     value = result.get("value")
-    return value if isinstance(value, int) and not isinstance(value, bool) else service_rc
+    code = value if isinstance(value, int) and not isinstance(value, bool) else service_rc
+    return mon.report(monitor, code)

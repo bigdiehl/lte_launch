@@ -26,6 +26,7 @@ no display, `export QT_QPA_PLATFORM=offscreen` first.
 | `turtle_params_launch.py` | the two ways a node gets ROS parameters: typed `RosParams`, and untyped config sections |
 | `stock_include_launch.py` | including a **traditional** (untyped) `.launch.py` file |
 | `turtle_bringup_script.py` | **imperative** launching: start, wait, check, restart, stop, in order |
+| `flaky_demo_launch.py` | what happens when a process dies: the error, the summary, the exit code |
 
 ### turtle_demo_launch.py — the main demo
 
@@ -133,6 +134,51 @@ python3 src/ros2_typed_launch_demo/launch/turtle_bringup_script.py --no-restart_
 
 Ctrl-C at any point: the wait the script is in raises, the script's own `finally` cleanup runs,
 and then everything it started is stopped (exit code 130).
+
+### flaky_demo_launch.py — when something dies
+
+Stock launch logs a death and still exits 0, so a failed bringup looks successful. This demo has a
+process that fails on purpose, next to a node that behaves and a one-shot job that finishes
+cleanly. It stops itself after a few seconds, so you can see the whole report.
+
+```bash
+tlaunch ros2_typed_launch_demo flaky_demo_launch.py ; echo "exit: $?"
+```
+
+```
+[ERROR] [flaky-2]: process has died [pid 740474, exit code 3, cmd '...'].
+[ERROR] [tlaunch]: flaky-2 died unexpectedly: exit code 3 [pid 740474]
+tlaunch: 1 process(es) died unexpectedly:
+  flaky-2: exit code 3 [pid 740474]
+    cmd: bash -c echo working; sleep 1.0; echo giving up >&2; exit 3
+exit: 1
+```
+
+The one-shot process exiting 0 is not a death, and neither is the node that was stopped when the
+launch ended — only an unasked-for failure is. Make it behave and the run is quiet again:
+
+```bash
+tlaunch ros2_typed_launch_demo flaky_demo_launch.py --rc 0 ; echo "exit: $?"    # exit: 0
+```
+
+Any launch can also publish this as diagnostics (off by default, because it needs a ROS node
+inside the launch):
+
+```bash
+tlaunch ros2_typed_launch_demo flaky_demo_launch.py --diagnostics
+ros2 topic echo /diagnostics          # in another terminal
+```
+
+```
+- level: "\x02"
+  name: /demo/keeper
+  message: 'died unexpectedly: killed by SIGKILL'
+```
+
+Each status is named by the node's fully qualified name where there is one, with the process name,
+pid, return code and command in its key/value list. Only processes this launch started are
+tracked: a node started by a wrapper script hides behind the wrapper's pid (have the wrapper pass
+the exit code up), and a composable node has no pid of its own at all.
 
 ## The config files
 

@@ -291,11 +291,22 @@ def test_stop_emits_one_shutdown_event_per_running_process():
     assert not event.process_matcher(stage["second"].action)
 
 
-def test_a_process_we_did_not_build_cannot_be_stopped_alone():
-    session, _ = make_session()
-    process = sess.Process(session, "mystery")
-    with pytest.raises(sess.SessionError, match="stop the stage instead"):
-        process.stop()
+def test_a_process_from_an_include_can_still_be_stopped_on_its_own():
+    """We did not build its action, but the start event handed it to us."""
+    from launch.events.process import ShutdownProcess
+
+    session, service = make_session()
+    stage = session.start(demo_launch, DemoConfig())
+    surprise = ExecuteProcess(cmd=["x"])
+    session._on_start(
+        started(surprise, name="helper-7", env={sess.STAGE_ENV: stage.id}), None
+    )
+
+    stage["helper-7"].stop(wait=False)
+
+    event = service.events[-1]
+    assert isinstance(event, ShutdownProcess) and event.process_matcher(surprise)
+    assert session.monitor.get(surprise).stop_requested   # so it is not a "death"
 
 
 def test_process_restart_points_at_the_stage():

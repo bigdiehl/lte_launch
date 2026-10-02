@@ -30,6 +30,7 @@ import yaml
 from . import config as cfg
 from . import effective
 from . import loader
+from . import monitor as mon
 from . import ros_config as rc
 from . import schema
 from .core import TypedLaunch, TypedScript, TypedTarget
@@ -50,7 +51,7 @@ OWN_WITH_VALUE = {
 }
 OWN_FLAGS = {
     "-h", "--help", "--schema", "--show-config",
-    "-n", "--noninteractive", "-d", "--debug", "--strict",
+    "-n", "--noninteractive", "-d", "--debug", "--strict", "--diagnostics",
 }
 RESERVED = OWN_WITH_VALUE | OWN_FLAGS
 
@@ -297,6 +298,13 @@ def add_own_args(parser: argparse.ArgumentParser):
         "the pattern and passes each node concrete rules",
     )
     g.add_argument(
+        "--diagnostics", action="store_true", dest="$diagnostics",
+        help="publish one diagnostic_msgs/DiagnosticStatus per launched process "
+        "on /diagnostics (~1 Hz), ERROR once a process dies; needs a ROS node "
+        "inside the launch, so it is off by default. Tracking, the error line "
+        "and the end-of-run summary happen either way",
+    )
+    g.add_argument(
         "--strict", action="store_true", dest="$strict",
         help="refuse untyped ROS parameters and remappings, and make every "
         "config warning an error: the schema must then describe everything",
@@ -498,11 +506,25 @@ def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any],
     )
     print(f"[INFO] [{PROG}]: effective config written to {saved}")
 
+    # Watch every process this run starts: pid, command, exit status (Q27). The
+    # handlers go first so nothing can start before they are registered.
+    monitor = mon.Monitor()
+    publisher = mon.Diagnostics(monitor) if own["diagnostics"] else None
+
     service = launch.LaunchService(
         noninteractive=own["noninteractive"], debug=own["debug"]
     )
-    service.include_launch_description(launch.LaunchDescription(actions))
-    return service.run()
+    service.include_launch_description(
+        launch.LaunchDescription(monitor.handlers() + actions)
+    )
+    if publisher is not None:
+        publisher.start()
+    try:
+        code = service.run()
+    finally:
+        if publisher is not None:
+            publisher.stop()
+    return mon.report(monitor, code, prog=PROG)
 
 
 def run_script(typed: TypedScript, config: Any, own: dict[str, Any],
@@ -526,6 +548,7 @@ def run_script(typed: TypedScript, config: Any, own: dict[str, Any],
             ros=ros,
             noninteractive=own["noninteractive"],
             debug=own["debug"],
+            diagnostics=own["diagnostics"],
         )
     except sess.SessionError as exc:
         raise TlaunchError(str(exc)) from None

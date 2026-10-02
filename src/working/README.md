@@ -3,7 +3,7 @@
 `ros2_typed_launch` gives ROS 2 typed, schema-driven launch files: a Pydantic model is the
 interface of a launch, and the `tlaunch` command turns it into a command line, YAML config
 layering and validation. A launch can also be an imperative **script** that starts things, waits
-for them and stops them in order. Status: **working prototype**, Jazzy, 132 unit tests,
+for them and stops them in order. Status: **working prototype**, Jazzy, 143 unit tests,
 `ament_cmake`.
 
 ## Quick start (run the demo)
@@ -72,6 +72,10 @@ headless/scripted use: `../CLAUDE.md` (one level up, at the repo's `src/`).
   `start()` returns a stage handle (`stage["planner"]`) with waits on processes, output and the
   ROS graph, per-stage `stop()`/`restart()`, Ctrl-C that lets your `finally` run, and the same
   file runnable under `tlaunch` or plain `python3` (Q26). Verified against live nodes.
+- **Built (2026-10-01):** process monitoring — every run records the processes it starts and
+  reports what died unexpectedly (error line naming the node, end-of-run summary, non-zero exit
+  code), with `--diagnostics` publishing `DiagnosticArray` on `/diagnostics` (Q27). Launch
+  itself returns 0 for a run whose node died; that is the gap this closes.
 - **Deferred by you:** units, pluggable schema backends / `InputDict`, tmux, node-defined
   parameter schemas (Q24 — parked 2026-09-27).
 - **Needs decisions:** see `design-notes.md`'s open questions — supported distros,

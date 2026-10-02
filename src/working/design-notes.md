@@ -44,6 +44,7 @@ Status tags on open questions: **OPEN** (needs a decision) · **PARTLY** (part b
 | Node params/remaps from config | ROS-native node patterns (`/**`, `/**/node`, `/ns/*`), **not** invented per-node ids; wildcards **interpreted by us** for both lanes, because rcl implements them for params but refuses them for remappings. Keys `ros__parameters` / `ros__remappings`, at the file's top level; launch schema under a **required** `launch_args:`. Reaches nodes through **our `Node` wrapper**. Untyped by default; typable via a `RosParams` Pydantic type; `--strict` refuses the untyped lane. Fully decided, not built — Q8 |
 | `$(...)` in config files | Reuse `launch.frontend.parse_substitution` (the stock lark grammar), expanded **eagerly per string leaf** at load time. Not our own parser, not `ParameterFile`. Built — Q25 |
 | Node-defined schemas | **Optional**: when a node ships a schema, `tlaunch -h` shows its parameters; when it doesn't, the untyped lane carries them. MoveIt's `generate_parameter_library` spec is *not installed* by its CMake macro, so discovery needs our own resource — Q24 |
+| Process monitoring | Every run records the processes it starts and **reports what died**: an error line naming the node, an end-of-run summary, and a **non-zero exit code** (launch itself returns 0 for a run whose node died). `/diagnostics` publishing is opt-in via `--diagnostics`, since it needs an rclpy node in the launch. Direct children only. Built — Q27 |
 | Imperative launching | `@script(config=...)` + a `Session`: the service owns the main thread, the script runs on a worker. `session.start()` returns a **stage handle** you drill into (`stage["planner"]`); Ctrl-C makes the current wait raise so the script's `finally` runs; the session always stops what it started; runnable as `tlaunch <pkg> <file>` **and** `python3 <file>`. Built — Q26 |
 | tmux | Deferred — see `#deferred-designs` below |
 | License | Not a concern for now |
@@ -398,45 +399,64 @@ Remaining edges: `--show-config` for a script is rendered *before* the run (stag
 script goes), so its node-pattern matches are unknown there, unlike for a launch; the health
 checks are only available inside a script, not as something a plain launch declares.
 
-### Process tracking + diagnostics on death (Q27) — OPEN, not started
+### Process tracking + diagnostics on death (Q27) — BUILT (2026-10-01)
 
 Wanted (2026-09-30): the launch keeps track of the PIDs it spawns; when a process dies it
-**logs an error** and **publishes a diagnostics message**. Applies to ordinary `tlaunch` runs,
-not only to Q26 sessions.
+**logs an error** and **publishes a diagnostics message**.
 
-**Tracking PIDs is easier than it looks** — checked, not assumed:
+**The finding that set the priorities:** a dying process does **not** change launch's exit code.
+`LaunchService.run()` returned **0** for a run whose process exited 3 — so a failed bringup is
+indistinguishable from a good one to anything reading `$?`. Fixing that turned out to matter more
+than the topic.
 
-- every process event (`ProcessStarted`, `ProcessExited`, all `RunningProcessEvent` subclasses)
-  already carries `pid`, `cmd`, `cwd`, `env`, `process_name` and the `action` object;
-- `ExecuteProcess.process_details` is a live dict of the same on the action itself;
-- `ProcessExited` adds `returncode`;
-- **stock launch already logs the error**:
-  `[ERROR] [failer-2]: process has died [pid 429699, exit code 3, cmd '...']` (seen in the Q26
-  prototype). So that half is done; ours would only add context.
+**Decided 2026-10-01** (asked one question at a time):
 
-So the work is a registry keyed by action → (pid, status, returncode) fed by those two event
-handlers — and **Q26 built exactly that**: `session.py`'s `_by_action` map already holds pid,
-returncode, cmd and output per process, including processes started by included launch files, with
-`_on_start`/`_on_exit` feeding it. What is left for Q27 is to make it available on an ordinary
-`tlaunch` run (which does not create a Session today), and the diagnostics publishing below.
+1. **Tracking, the error line and an end-of-run summary are always on** — they need no ROS node and
+   cost nothing. **Publishing is `--diagnostics`**, because it needs an rclpy node inside the launch
+   process and nothing listens by default (`diagnostic_updater`/`diagnostic_aggregator` are not even
+   installed here).
+2. **An unexpected death makes `tlaunch` exit non-zero** (1 when launch itself returned 0), with a
+   summary naming what died. *Unexpected* = we did not ask it to stop, it was not going down with
+   the launch, and it exited non-zero or was killed by a signal. A oneshot exiting 0 is not a death;
+   neither is a process we stopped, nor anything killed during shutdown.
+3. **A diagnostic is named by the node's fully qualified name** (`/demo/keeper`), with the process
+   name alongside pid, returncode and command in its key/value list. `Node.node_name` resolves once
+   the action is executing, which is exactly when the start event arrives.
+4. **Direct children only.** A wrapper script's children are invisible — launch only learns the
+   wrapper's pid — and the right fix there is for the wrapper to pass its child's exit code up. A
+   composable node has no pid at all (a thread in a container); that case is still open.
 
-**What is genuinely hard, and is probably the worry:** the PID launch knows is the **direct
-child** it spawned. Anything that process forks is invisible — a node started through a wrapper
-script, anything under `--launch-prefix` (where the prefix *replaces* the command, so the PID is
-the prefix's), and composable nodes, which are threads inside one container process and have no
-PID of their own. So "every ROS node has a tracked PID" is not achievable; "every process launch
-started, plus its exit status" is, and is what we should promise. Going further would mean
-walking `/proc` for descendants — possible, racy, and out of scope unless a real need appears.
+**What is in the code:** `monitor.py` — `ProcessInfo` (pid, cmd, node name, exit status, recent
+output, `died_unexpectedly`, `why()`), `Monitor` (four event handlers via `handlers()`, `note_stop`,
+`deaths()`, `summary()`), `report()` (the summary plus the exit code, used by both run paths) and
+`Diagnostics` (a hidden rclpy node publishing `DiagnosticArray` on `/diagnostics` at 1 Hz from its
+own thread). `session.py` now **uses** that monitor rather than tracking separately — `Process` is a
+handle over a `ProcessInfo` — so there is one implementation for plain runs and sessions.
+`cli.run_launch` prepends `monitor.handlers()` to every launch. Demo: `flaky_demo_launch.py`.
+10 unit tests in `test_monitor.py`.
 
-**Diagnostics sketch.** `diagnostic_msgs` is installed. Publishing needs an `rclpy` node inside
-the launch process (a first for us — nothing in tlaunch has spun a node so far): one
-`DiagnosticStatus` per tracked process on `/diagnostics` (the convention `diagnostic_aggregator`
-consumes), `level` OK while running and ERROR once dead, `name` the process name, `values`
-carrying pid / returncode / cmd. Publish on change, and periodically (~1 Hz) since aggregators
-expect liveness. Open: whether to publish at all when nothing is listening; whether an
-unexpected death should also be *summarised* at the end of the run (likely more useful in
-practice than a message on a topic nobody echoes); needs `rclpy` + `diagnostic_msgs` as
-`exec_depend`s.
+**Verified by running it:**
+
+| Claim | Evidence |
+|---|---|
+| a death is named and logged | `[ERROR] [tlaunch]: /demo/keeper (turtlesim_node-1) died unexpectedly: killed by SIGKILL [pid 735979]` |
+| the run says so at the end | `tlaunch: 1 process(es) died unexpectedly:` + the node, why, pid and cmd |
+| the exit code says so | `exit: 1` for the flaky demo; `0` with `--rc 0`, and `0` for a run where only a oneshot exited and the rest were stopped at shutdown |
+| `/diagnostics` is real | an external `ros2 topic echo /diagnostics` showed `name: /demo/keeper`, `level: "\0"` → `"\x02"`, `message: 'died unexpectedly: killed by SIGKILL'`, with process/pid/returncode/cmd in `values` |
+| signals read as words | `returncode` −9/−15/−2 → "killed by SIGKILL/SIGTERM/SIGINT" |
+
+**Gotcha, found the hard way:** `DiagnosticStatus.level` must be the **bytes** constant
+(`DiagnosticStatus.ERROR` == `b'\x02'`). Assigning the int `2` passes Python and then **aborts the
+whole process** inside the C conversion (`Assertion 'PyBytes_Check(field)' failed`) — not an
+exception. A unit test pins the bytes form.
+
+**Probed and rejected:** the ROS graph as a death signal. A `SIGKILL`ed node left the graph in 0.2 s
+in one run and was still listed 10 s later in another, so graph checks are a bringup aid (Q26's
+`wait_for_node`), never the death detector. Process events, by contrast, arrived immediately.
+
+Still open: composable nodes (no pid — probably needs the container's own node list); a
+`required=True` notion per node (ROS 1's `required`, ROS 2's `on_exit=Shutdown()`); whether
+`--diagnostics` should also publish a single aggregate status for the launch as a whole.
 
 ### tmux (T) — DEFERRED
 
