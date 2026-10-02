@@ -63,7 +63,11 @@ def resolve_config_ref(ref: str) -> str:
 def load_config_file(path: str) -> dict:
     """Read a YAML config file; the top level must be a mapping.
 
-    ``$(...)`` substitutions are expanded here, once, for the whole file.
+    ``$(...)`` substitutions are **not** expanded here -- see ``expand_values``.
+    They are expanded only after the file's ``launch_args`` have been checked
+    against the schema, so that a key that does not belong to this launch is
+    reported before a substitution that cannot be resolved. Substitutions never
+    appear in a key, so checking first is safe.
     """
     try:
         text = Path(path).read_text()
@@ -79,8 +83,13 @@ def load_config_file(path: str) -> dict:
         raise ConfigFileError(
             f"config file '{path}' must contain a mapping at the top level"
         )
+    return data
+
+
+def expand_values(value: Any, source: str) -> Any:
+    """Expand ``$(...)`` in every string in ``value`` (see ``subst.py``)."""
     try:
-        return subst.expand(data, path)
+        return subst.expand(value, source)
     except subst.SubstitutionError as exc:
         raise ConfigFileError(str(exc)) from None
 

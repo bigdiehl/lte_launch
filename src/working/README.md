@@ -2,7 +2,9 @@
 
 `ros2_typed_launch` gives ROS 2 typed, schema-driven launch files: a Pydantic model is the
 interface of a launch, and the `tlaunch` command turns it into a command line, YAML config
-layering and validation. Status: **working prototype**, Jazzy, 109 unit tests, `ament_cmake`.
+layering and validation. A launch can also be an imperative **script** that starts things, waits
+for them and stops them in order. Status: **working prototype**, Jazzy, 132 unit tests,
+`ament_cmake`.
 
 ## Quick start (run the demo)
 
@@ -22,7 +24,11 @@ tlaunch ros2_typed_launch_demo turtle_demo_launch.py \
     --turtlesim.background_r 99 --no-teleop.enabled     # config file + CLI override
 tlaunch ros2_typed_launch_demo turtle_showcase_launch.py \
     --scope.global_params use_sim_time=true --timers.stop_after 15   # tour of launch constructs
+tlaunch ros2_typed_launch_demo turtle_bringup_script.py --settle 2   # imperative: bring up, check, drive, stop
+python3 src/ros2_typed_launch_demo/launch/turtle_bringup_script.py -h   # the same script, run directly
 ```
+
+Every demo, with its own commands: `../ros2_typed_launch_demo/README.md`.
 
 `<package> <file>` is the full filename (`.py` required), found by searching the package
 for a `*_launch.py` file with that name (like `ros2 launch <package> <file>` searches
@@ -62,6 +68,10 @@ headless/scripted use: `../CLAUDE.md` (one level up, at the repo's `src/`).
   parameters; `--ros-param`/`--ros-remap`/`--strict`; `$(...)` expansion via the stock launch
   parser; `--show-config` renders a round-trippable config file, which every run also saves
   to `/tmp/tlaunch/` (Q8, Q25). Verified against live nodes.
+- **Built (2026-10-01):** imperative/synchronous launching — `@script` + a `Session` whose
+  `start()` returns a stage handle (`stage["planner"]`) with waits on processes, output and the
+  ROS graph, per-stage `stop()`/`restart()`, Ctrl-C that lets your `finally` run, and the same
+  file runnable under `tlaunch` or plain `python3` (Q26). Verified against live nodes.
 - **Deferred by you:** units, pluggable schema backends / `InputDict`, tmux, node-defined
   parameter schemas (Q24 — parked 2026-09-27).
 - **Needs decisions:** see `design-notes.md`'s open questions — supported distros,

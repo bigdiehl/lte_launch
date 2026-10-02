@@ -6,7 +6,8 @@ find_package(ament_cmake_python REQUIRED)
 
 ament_python_install_package(${PROJECT_NAME})
 
-# launch/ lives at the package root (ROS-conventional, sibling to package.xml),
+# launch/ lives at the package root (ROS-conventional, sibling to package.xml) and
+# holds both typed launches (*_launch.py) and imperative scripts (*_script.py),
 # but installs as a real subpackage of ros2_typed_launch_demo, not a copy to
 # share/ -- so `from ros2_typed_launch_demo.launch import ...` and
 # `tlaunch ros2_typed_launch_demo launch.<module>` both work. See

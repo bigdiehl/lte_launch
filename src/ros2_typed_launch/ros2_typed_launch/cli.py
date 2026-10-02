@@ -32,7 +32,7 @@ from . import effective
 from . import loader
 from . import ros_config as rc
 from . import schema
-from .core import TypedLaunch
+from .core import TypedLaunch, TypedScript, TypedTarget
 
 PROG = "tlaunch"
 WARN = f"{PROG}: warning:"
@@ -303,12 +303,15 @@ def add_own_args(parser: argparse.ArgumentParser):
     )
 
 
-def build_parser(label: str, typed: TypedLaunch):
+def build_parser(label: str, typed: TypedTarget, *, direct: bool = False):
+    """``direct`` is for a file run as its own program (``python3 my_script.py``),
+    where there is no target to name on the command line."""
     summary = schema.summary(typed.config_type)
+    program = os.path.basename(sys.argv[0]) if direct else PROG
     parser = argparse.ArgumentParser(
-        prog=PROG,
+        prog=program,
         allow_abbrev=False,
-        usage=USAGE,
+        usage=f"{program} [options]" if direct else USAGE,
         description=_esc(f"{label}\n{summary}".strip()),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -374,21 +377,35 @@ def layer_config(model: type, files: list[str], cli: dict[str, Any], own: dict):
     merged: dict = {}
     sections: list[rc.Section] = []
 
+    # Two passes on purpose. The first reads and checks every file against the
+    # schema; the second expands $(...) and merges. So a key that is not part of
+    # this launch is always reported before a substitution that cannot be
+    # resolved -- the schema mismatch is the more fundamental error, and it can
+    # be in a different file than the bad substitution.
     problems: list[str] = []
+    loaded: list[tuple[str, dict, list[rc.Section]]] = []
     for ref in files:
         data = cfg.load_config_file(cfg.resolve_config_ref(ref))
         launch_args, file_sections = cfg.split_file(data, ref)
-        sections.extend(file_sections)
+        loaded.append((ref, launch_args, file_sections))
         issues = schema.unknown_keys(model, launch_args)
         if issues:
             problems.append(f"in config file '{ref}':")
             problems.extend(_issue_lines(issues, as_flags=False))
+    if problems:
+        raise TlaunchError("\n".join(problems))
+
+    for ref, launch_args, file_sections in loaded:
+        launch_args = cfg.expand_values(launch_args, ref)
+        for section in file_sections:
+            where = f"{ref}:{section.pattern}"
+            section.params = cfg.expand_values(section.params, f"{where}.{rc.PARAMS_KEY}")
+            section.remaps = cfg.expand_values(section.remaps, f"{where}.{rc.REMAPS_KEY}")
+        sections.extend(file_sections)
         for spec in specs:
             if cfg.lookup(launch_args, spec.path)[0]:
                 sources[spec.path] = ref
         merged = cfg.deep_merge(merged, launch_args)
-    if problems:
-        raise TlaunchError("\n".join(problems))
 
     merged = cfg.deep_merge(merged, cfg.nest(cli))
     for dotted in cli:
@@ -488,6 +505,32 @@ def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any],
     return service.run()
 
 
+def run_script(typed: TypedScript, config: Any, own: dict[str, Any],
+               ros: rc.RosConfig, sources: dict, label: str) -> int:
+    """Run an imperative launch script (Q26): the script body drives a session.
+
+    Unlike a launch, nothing is built up front -- the script builds and starts
+    stages as it goes -- so the effective config is saved before the run, and
+    its node-pattern matches are not known at that point.
+    """
+    from . import session as sess
+
+    saved = save_effective(
+        effective.render(typed.config_type, config, sources, ros, label), label
+    )
+    print(f"[INFO] [{PROG}]: effective config written to {saved}")
+
+    try:
+        return sess.run_session(
+            lambda session: typed.run(session, config),
+            ros=ros,
+            noninteractive=own["noninteractive"],
+            debug=own["debug"],
+        )
+    except sess.SessionError as exc:
+        raise TlaunchError(str(exc)) from None
+
+
 def print_general_help() -> None:
     print(
         f"usage: {USAGE}\n\n"
@@ -496,23 +539,29 @@ def print_general_help() -> None:
     )
 
 
-def _main(argv: list[str]) -> int:
+def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
     debug = "-d" in argv or "--debug" in argv
-    target, rest = split_target(argv)
 
-    if not target:
-        if "-h" in rest or "--help" in rest or not rest:
-            print_general_help()
-            return 0
-        raise TlaunchError("no launch file given")
-
-    try:
-        typed = loader.resolve(*target)
-    except loader.LaunchLookupError as exc:
-        if debug:
-            traceback.print_exception(exc)
-        raise TlaunchError(str(exc)) from None
-    parser = build_parser(" ".join(target), typed)
+    if typed is not None:
+        # Run directly as a program: the target is the file we are in, so every
+        # argument is an option (see TypedTarget.main).
+        target, rest = [typed.name], argv
+        direct = True
+    else:
+        direct = False
+        target, rest = split_target(argv)
+        if not target:
+            if "-h" in rest or "--help" in rest or not rest:
+                print_general_help()
+                return 0
+            raise TlaunchError("no launch file given")
+        try:
+            typed = loader.resolve(*target)
+        except loader.LaunchLookupError as exc:
+            if debug:
+                traceback.print_exception(exc)
+            raise TlaunchError(str(exc)) from None
+    parser = build_parser(" ".join(target), typed, direct=direct)
 
     ns = vars(parser.parse_args(rest))
     own = {k[1:]: ns.pop(k) for k in list(ns) if k.startswith("$")}
@@ -535,7 +584,7 @@ def _main(argv: list[str]) -> int:
 
     label = " ".join(target)
     if own["show_config"]:
-        if ros:
+        if ros and isinstance(typed, TypedLaunch):
             # Building is what resolves the node patterns, so do it (the actions
             # are discarded) to report which nodes each section actually reached.
             build_actions(typed, config, ros, own)
@@ -545,10 +594,14 @@ def _main(argv: list[str]) -> int:
         )
         return 0
 
+    if isinstance(typed, TypedScript):
+        return run_script(typed, config, own, ros, sources, label)
     return run_launch(typed, config, own, ros, sources, label)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, target: TypedTarget | None = None) -> int:
+    """``tlaunch``'s entry point. ``target`` short-circuits target resolution, for
+    a file run directly with ``python3`` (see ``TypedTarget.main``)."""
     try:
         import argcomplete
     except ImportError:
@@ -560,7 +613,7 @@ def main(argv: list[str] | None = None) -> int:
 
     argv = sys.argv[1:] if argv is None else argv
     try:
-        return _main(argv)
+        return _main(argv, target)
     except TlaunchError as exc:
         print(f"{PROG}: error: {exc}", file=sys.stderr)
         return 2

@@ -256,6 +256,54 @@ def test_typo_in_config_file_is_an_error_with_suggestion(sample_launch, write, c
     assert "plannr" in err and "did you mean 'planner'" in err and a in err
 
 
+def test_launch_args_is_checked_against_the_schema_but_node_sections_are_not(
+    sample_launch, write, capsys
+):
+    """The two lanes have different contracts, on purpose: `launch_args` is this
+    launch's interface, so an unknown or mistyped key there is an error; node
+    parameters/remappings are a node's business, so anything goes."""
+    good = write(
+        "good.yaml",
+        "launch_args: {map: m}\n"
+        "/**:\n"
+        "  ros__parameters: {totally_made_up: 1, nested: {a: [1, 2]}}\n"
+        "  ros__remappings: {whatever: /else}\n",
+        raw=True,
+    )
+    code, _, err = run([sample_launch, "--config", good, "--show-config"], capsys)
+    assert code == 0 and err == ""          # the untyped lanes are never checked
+
+    for text, expected in [
+        ("map: m\nnot_a_field: 1\n", "not_a_field: unknown key"),
+        ("map: m\nplanner: {bogus: 1}\n", "planner.bogus: unknown key"),
+        ("map: m\nplanner: 5\n", "planner: expected a mapping"),
+        ("map: m\nplanner: {tolerance: nope}\n", "not a valid float"),
+    ]:
+        path = write("bad.yaml", text)
+        code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
+        assert code == 2 and expected in err
+
+
+def test_a_schema_mismatch_is_reported_before_a_bad_substitution(
+    sample_launch, write, capsys
+):
+    """Which key belongs to this launch is the more fundamental question, so it is
+    answered first -- even when the bad substitution is in another file."""
+    pytest.importorskip("launch")
+    bad_key = write("a.yaml", "map: m\nnot_a_field: 1\n")
+    bad_subst = write(
+        "b.yaml",
+        "launch_args: {map: m}\n/**:\n  ros__parameters: {x: $(var nope)}\n",
+        raw=True,
+    )
+    code, _, err = run(
+        [sample_launch, "--config", bad_subst, "--config", bad_key, "--show-config"],
+        capsys,
+    )
+    assert code == 2
+    assert "not_a_field: unknown key" in err and "cannot expand" not in err
+
+
 def test_missing_config_file_is_a_clean_error(sample_launch, capsys):
     code, _, err = run([sample_launch, "--config", "./nope.yaml", "--show-config"], capsys)
     assert code == 2 and "cannot read config file" in err

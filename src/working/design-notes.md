@@ -32,7 +32,7 @@ Status tags on open questions: **OPEN** (needs a decision) · **PARTLY** (part b
 |---|---|
 | Front end | Own command `tlaunch`, not a hook into `ros2 launch`; normal argparse syntax (`--a.b value`), not `name:=value` |
 | Flags | Snake_case, exactly the dotted field path; `--x`/`--no-x` for bools; `--tag a --tag b` for lists; `--remap k=v` for dicts |
-| Launch identity | A file's `@launch`-tagged, exported `generate_launch_description` — same handle stock `ros2 launch` uses |
+| Launch identity | A file's exported `generate_launch_description`, tagged `.typed_target` by `@launch`/`@script` — same handle stock `ros2 launch` uses |
 | Typed-only | `tlaunch` runs typed launch files only; untyped ones use stock `ros2 launch`; a typed file run under stock launch errors with a pointer to `tlaunch` |
 | Addressing | `tlaunch <package> <file>` — `<file>` the **full filename, `.py` required** (the bare stem alone is rejected with a hint), found by searching the package for a `*_launch.py` with that name (like `ros2 launch <pkg> <file>` searches `share/`); an explicit dotted (never `.py`) or on-disk-slash (`.py` required) path also works, needed only to disambiguate. `tlaunch <path>` for a standalone file (no parent package, so no relative imports). Historical: this was a share-dir walk, then a required dotted submodule path, then a bare stem with `.py` optional, before landing here — see `loader.py`'s docstring for the mechanism, not this doc, for future changes |
 | Launch files | Named `*_launch.py` (not `*.launch.py` — unimportable), live in a top-level `launch/` directory (sibling to `package.xml`), installed by CMake as a real subpackage nested under the main package. Same-package include = plain `import`; `launch/__init__.py` re-exports every launch |
@@ -44,6 +44,7 @@ Status tags on open questions: **OPEN** (needs a decision) · **PARTLY** (part b
 | Node params/remaps from config | ROS-native node patterns (`/**`, `/**/node`, `/ns/*`), **not** invented per-node ids; wildcards **interpreted by us** for both lanes, because rcl implements them for params but refuses them for remappings. Keys `ros__parameters` / `ros__remappings`, at the file's top level; launch schema under a **required** `launch_args:`. Reaches nodes through **our `Node` wrapper**. Untyped by default; typable via a `RosParams` Pydantic type; `--strict` refuses the untyped lane. Fully decided, not built — Q8 |
 | `$(...)` in config files | Reuse `launch.frontend.parse_substitution` (the stock lark grammar), expanded **eagerly per string leaf** at load time. Not our own parser, not `ParameterFile`. Built — Q25 |
 | Node-defined schemas | **Optional**: when a node ships a schema, `tlaunch -h` shows its parameters; when it doesn't, the untyped lane carries them. MoveIt's `generate_parameter_library` spec is *not installed* by its CMake macro, so discovery needs our own resource — Q24 |
+| Imperative launching | `@script(config=...)` + a `Session`: the service owns the main thread, the script runs on a worker. `session.start()` returns a **stage handle** you drill into (`stage["planner"]`); Ctrl-C makes the current wait raise so the script's `finally` runs; the session always stops what it started; runnable as `tlaunch <pkg> <file>` **and** `python3 <file>`. Built — Q26 |
 | tmux | Deferred — see `#deferred-designs` below |
 | License | Not a concern for now |
 
@@ -311,6 +312,131 @@ complete *for the launch*.
 Open: whether tier 2 belongs in this project at all (it makes `ros2_typed_launch` a node-side
 library too, not just a launch front end) or in a sibling package; whether tier 3 scaffolding
 is worth building before tier 1 is in use.
+
+### Imperative / synchronous launching (Q26) — BUILT (2026-10-01)
+
+The complaint (2026-09-28): stock launch is fire-and-forget. You declare a `LaunchDescription`,
+hand it over, and have no control afterwards. Wanted instead: a **script** that launches
+something, does something else (checks, waiting for a bringup signal), then does more — while
+keeping what launch gives you (live output, a node failure not taking the parent down).
+
+```python
+@script(config=BringupConfig)
+def bringup(session, config):
+    sim = session.start(turtle_params, ParamsDemoConfig(namespace="demo"))
+    try:
+        sim.wait_started(timeout=30)                 # the process exists
+        session.wait_for_node("/demo/turtlesim")     # the node is really up (rclpy graph)
+        driver = session.start(lambda: driver_process("demo"), name="driver")
+        driver["driver"].wait_output("publishing")   # wait for what it says, not a sleep
+        driver.restart()                             # stop, rebuild, start -- same handle
+        driver.stop()                                # one stage down, session lives on
+        return 0
+    finally:
+        sim.stop()                                   # runs on Ctrl-C too
+
+if __name__ == "__main__":
+    bringup.main()
+```
+
+**The constraint that shapes it:** `run()`/`run_async()` raise `RuntimeError('LaunchService can
+only be run in the main thread.')`. So the service owns the main thread and **the script runs on a
+worker**, which is legal because `emit_event`/`include_launch_description` are documented
+thread-safe. `run(shutdown_when_idle=False)` keeps an idle session alive between steps.
+
+**The four decisions (asked one at a time, 2026-09-30) and how they came out:**
+
+1. **Ctrl-C** → the wait raises `SessionShutdown` at once, the script's `finally` runs, then
+   shutdown. Every wait is shutdown-aware; none returns a comforting lie. A script that lets the
+   exception through exits **130** with `[INFO] [tlaunch]: interrupted`, not a traceback.
+2. **How you run it** → **both**, from one `main()`: `tlaunch <pkg> <file>` and `python3 <file>`.
+   The loader searches for `*_launch.py` **and `*_script.py`** (`loader.TARGET_SUFFIXES`), and
+   both decorators tag their `generate_launch_description` with `.typed_target`, so there is one
+   discovery path and one dispatch point (`cli._main`). Cost, as predicted: under `python3` the
+   module is `__main__`, so a **script must use absolute imports** (the demo says so in a comment).
+3. **Handles** → a **stage handle you can drill into**: `session.start()` returns a `Stage`;
+   `stage["planner"]` is a `Process`. Keys come from the declared `name` at build time
+   (`_declared_name` reads through launch's substitution normalization, so `ExecuteProcess(name=)`
+   and `Node(name=)` both work); a runtime-named node has no key. Waits hang off handles, never off
+   a name string, because launch's `process_name` carries an unpredictable `-N` suffix.
+4. **On error** → **always stop them.** The script returning or raising shuts the session down; no
+   `--keep-running`. Exit code is the script's int if it returns one, else the service's.
+
+**What is in the code:** `session.py` — `Session` (start/sleep/log, `wait_for_node`,
+`wait_for_topic`, `node_names`, `stop_all`), `Stage` (`wait_started`/`wait_exited`/`wait_output`/
+`stop`/`restart`, `[key]`, `pids`), `Process` (`pid`, `returncode`, `running`, `output()`, the same
+waits, `stop`), and `run_session` (the thread split); `core.py` — `@script`, `TypedScript`, and
+`TypedTarget.main()` shared with `@launch`; `cli.run_script`. 22 unit tests, two of which drive a
+real `LaunchService`.
+
+**Verified by running it, not by reading** (`turtle_bringup_script.py`, plus throwaway probes):
+
+| Claim | Evidence |
+|---|---|
+| ordered bringup | turtlesim up → graph check passes → driver starts → output matched → stop → teardown, in order, exit 0 |
+| Ctrl-C mid-wait | `[WARNING] user interrupted`; the wait raised, `finally` ran with `shutting_down=True`, processes stopped, rc **130** |
+| failure isolation | a process dying rc=3 left the script running and a later stage started fine |
+| per-stage stop | driver stopped while turtlesim stayed up and the script continued |
+| restart | `driver-2` → `driver-3` with a new pid, same `stage["driver"]` key |
+| stock includes | a node started *inside* an included stock launch file was attributed to its stage and stopped with it |
+| `python3` route | same script, same flags, same behaviour as under `tlaunch` |
+
+**Two findings worth keeping:**
+
+* **Launch refuses to execute an action twice** (`ExecuteLocal action 'failer-3': executed more
+  than once`) — and that exception **takes the whole service down**. So `restart()` must *rebuild*:
+  a stage is restartable only if it came from a typed launch or from a **function** that builds the
+  actions (`session.start(lambda: driver_process(ns))`). From bare action objects it refuses, with
+  that fix in the message. `Process.restart()` is deliberately not implemented: rebuilding one node
+  out of a list would drop the scope its siblings put it in (an enclosing `PushRosNamespace`).
+* **Stage attribution survives includes** by marking each stage's scope with
+  `SetEnvironmentVariable("TLAUNCH_STAGE", id)` inside its scoped `GroupAction`: a process we never
+  built still reports that env in its start event, so it lands in the right stage (keyed by
+  launch's runtime process name, since it has no declared one).
+
+Remaining edges: `--show-config` for a script is rendered *before* the run (stages build as the
+script goes), so its node-pattern matches are unknown there, unlike for a launch; the health
+checks are only available inside a script, not as something a plain launch declares.
+
+### Process tracking + diagnostics on death (Q27) — OPEN, not started
+
+Wanted (2026-09-30): the launch keeps track of the PIDs it spawns; when a process dies it
+**logs an error** and **publishes a diagnostics message**. Applies to ordinary `tlaunch` runs,
+not only to Q26 sessions.
+
+**Tracking PIDs is easier than it looks** — checked, not assumed:
+
+- every process event (`ProcessStarted`, `ProcessExited`, all `RunningProcessEvent` subclasses)
+  already carries `pid`, `cmd`, `cwd`, `env`, `process_name` and the `action` object;
+- `ExecuteProcess.process_details` is a live dict of the same on the action itself;
+- `ProcessExited` adds `returncode`;
+- **stock launch already logs the error**:
+  `[ERROR] [failer-2]: process has died [pid 429699, exit code 3, cmd '...']` (seen in the Q26
+  prototype). So that half is done; ours would only add context.
+
+So the work is a registry keyed by action → (pid, status, returncode) fed by those two event
+handlers — and **Q26 built exactly that**: `session.py`'s `_by_action` map already holds pid,
+returncode, cmd and output per process, including processes started by included launch files, with
+`_on_start`/`_on_exit` feeding it. What is left for Q27 is to make it available on an ordinary
+`tlaunch` run (which does not create a Session today), and the diagnostics publishing below.
+
+**What is genuinely hard, and is probably the worry:** the PID launch knows is the **direct
+child** it spawned. Anything that process forks is invisible — a node started through a wrapper
+script, anything under `--launch-prefix` (where the prefix *replaces* the command, so the PID is
+the prefix's), and composable nodes, which are threads inside one container process and have no
+PID of their own. So "every ROS node has a tracked PID" is not achievable; "every process launch
+started, plus its exit status" is, and is what we should promise. Going further would mean
+walking `/proc` for descendants — possible, racy, and out of scope unless a real need appears.
+
+**Diagnostics sketch.** `diagnostic_msgs` is installed. Publishing needs an `rclpy` node inside
+the launch process (a first for us — nothing in tlaunch has spun a node so far): one
+`DiagnosticStatus` per tracked process on `/diagnostics` (the convention `diagnostic_aggregator`
+consumes), `level` OK while running and ERROR once dead, `name` the process name, `values`
+carrying pid / returncode / cmd. Publish on change, and periodically (~1 Hz) since aggregators
+expect liveness. Open: whether to publish at all when nothing is listening; whether an
+unexpected death should also be *summarised* at the end of the run (likely more useful in
+practice than a message on a topic nobody echoes); needs `rclpy` + `diagnostic_msgs` as
+`exec_depend`s.
 
 ### tmux (T) — DEFERRED
 

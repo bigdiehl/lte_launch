@@ -25,7 +25,7 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   is ambiguous (two files sharing a name). `<path>` is for a standalone file not part of
   any package (e.g. `working/prototypes/`) — no parent package, so no relative imports
   (same limitation stock `ros2 launch` has for a bare file). A launch is identified by
-  its exported `generate_launch_description`, tagged `.typed_launch` by `@launch`.
+  its exported `generate_launch_description`, tagged `.typed_target` by `@launch`/`@script`.
   **Typed launch files only**; untyped ones use stock `ros2 launch`.
 - Config layering: model defaults < `--config` files (repeatable, **deep-merged, later
   wins; lists are replaced, dict keys merge**) < CLI flags; validated *before* anything
@@ -75,6 +75,17 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   `importlib.import_module` under the hood) is only for a launch chosen dynamically or
   from another package. `include(child, config)` builds the child eagerly and returns a
   scoped `GroupAction`; the parent's namespace/params/remaps/env are inherited.
+- **A launch can instead be an imperative script**: `@script(config=Model)` over a
+  `(session, config)` function, run with `tlaunch <package> <file>` **or** `python3 <file>`
+  (`target.main()`). `session.start(target)` queues a **stage** and returns a handle —
+  `stage.wait_started()`, `stage["planner"].wait_output("ready")`, `stage.stop()`,
+  `stage.restart()`; `session.wait_for_node`/`wait_for_topic` are real `rclpy` graph checks;
+  `session.sleep` is interruptible. **The service owns the main thread** (launch's own rule), so
+  the script body runs on a worker; Ctrl-C makes the current wait raise `SessionShutdown` so the
+  script's `finally` runs, and the session always stops what it started. Exit code: the script's
+  int if it returns one, else the service's (130 on Ctrl-C). Scripts are named `*_script.py` and
+  live beside launch files; `loader.TARGET_SUFFIXES` is what makes both findable. See
+  `session.py`, `turtle_bringup_script.py`, design-notes Q26.
 - Stock `launch`/`launch_ros` actions are used as-is (`PushRosNamespace`, `SetParameter`,
   `TimerAction`, event handlers, ...); see `turtle_showcase_launch.py`. A typed launch can
   also **include a traditional (untyped) stock launch file** via stock
@@ -115,20 +126,24 @@ Two **`ament_cmake`** packages under `src/`:
     find and import a launch, by package+bare-filename search, an explicit
     dotted/on-disk-slash path, or a standalone file path), `schema.py` (**all** Pydantic
     access), `config.py` (YAML, `<package>:<path>` refs, merge), `core.py` (`@launch`,
-    `TypedLaunch`), `actions.py` (`include`, `node`, `stock_args`), `ros_config.py`
+    `@script`, and the `TypedTarget`/`TypedLaunch`/`TypedScript` trio with their shared
+    `main()`), `actions.py` (`include`, `node`, `stock_args`), `ros_config.py`
     (node patterns + the untyped `ros__parameters`/`ros__remappings` lanes), `subst.py`
-    (`$(...)` expansion), `effective.py` (the effective config as a loadable YAML file).
-    `test/` — pytest suite (109 tests).
-- `ros2_typed_launch_demo/` — demo.
+    (`$(...)` expansion), `effective.py` (the effective config as a loadable YAML file),
+    `session.py` (imperative launching: `Session`/`Stage`/`Process`/`run_session`).
+    `test/` — pytest suite (132 tests).
+- `ros2_typed_launch_demo/` — demo. **`README.md` lists every demo with its commands** —
+  keep it updated when a demo is added or its flags change.
   - `package.xml`/`CMakeLists.txt`: installs the base package, *and* the top-level
     `launch/` directory as a subpackage nested under it (`ament_python_install_package(launch
     PACKAGE_DIR launch DESTINATION ${PYTHON_INSTALL_DIR}/${PROJECT_NAME})` — the trick
     behind the layout below).
   - `launch/`: `turtle_demo_launch.py`, `turtle_teleop_launch.py`,
     `localization_launch.py`, `turtle_showcase_launch.py`, `stock_include_launch.py`,
-    `turtle_params_launch.py` (typed `RosParams` + the untyped lanes via `node()`) —
+    `turtle_params_launch.py` (typed `RosParams` + the untyped lanes via `node()`), and
+    `turtle_bringup_script.py` (**imperative**: `@script`, stages, graph checks, restart) —
     ordinary submodules of `ros2_typed_launch_demo.launch`, importing each other directly;
-    `__init__.py` re-exports all six.
+    `__init__.py` re-exports all seven.
   - `config/*.yaml` — example `--config` files, installed to the share dir (unaffected
     by where the Python launch files live).
   - `stock_launch/spawn_turtle.launch.py` — a traditional (untyped) launch file, installed
@@ -165,6 +180,8 @@ tlaunch ros2_typed_launch_demo turtle_params_launch.py \
     --config ros2_typed_launch_demo:config/params_demo.yaml --show-config
                         # typed RosParams + untyped ros__parameters/ros__remappings,
                         # with which node pattern matched which node
+tlaunch ros2_typed_launch_demo turtle_bringup_script.py --settle 2   # imperative script
+python3 src/ros2_typed_launch_demo/launch/turtle_bringup_script.py --no-drive   # same file, direct
 tlaunch <file_launch.py> --schema                                    # JSON Schema
 ```
 
@@ -207,6 +224,17 @@ timeout --foreground -s INT 20 tlaunch ... > log 2>&1
 - A `ros__remappings` "from" side is the name **as the node uses it**, so a node in a
   namespace needs the relative spelling (`turtle1/cmd_vel`, not `/turtle1/cmd_vel`). ROS's
   rule, not ours; the wrong form silently remaps nothing.
+- **Testing a Ctrl-C needs care**: `kill -INT <pid>` from a non-interactive shell often does
+  not reach the process (and `pkill -f`/a bad `$!` can kill the calling shell — exit 144). The
+  reliable way is to have the program signal itself (`os.kill(os.getpid(), SIGINT)`) or
+  `timeout --foreground -s INT`.
+- **Launch will not execute an action twice** — `ExecuteLocal action '...': executed more than
+  once`, and that exception takes the whole service down. So a session restart *rebuilds*: a stage
+  is restartable only from a typed launch or a factory function, never from action objects.
+- A script run with plain `python3` is `__main__` with no parent package, so it must use
+  **absolute** imports (`from ros2_typed_launch_demo.launch.x_launch import ...`).
+- `ExecuteProcess(name="x").name` is a list of `TextSubstitution`s, not a string; read a declared
+  name through `session._plain_text`/`_declared_name`, not `str()`.
 - A node is only matchable by a node pattern if it is built with `node(...)` **and given a
   `name`** — matching uses the declared `name`/`namespace`, so an enclosing
   `PushRosNamespace` or a runtime-chosen name is invisible to it.

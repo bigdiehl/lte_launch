@@ -3,15 +3,19 @@
     - Simplify the config class creation
     - How does this work if we want to do more fancy stuff? Like validators that run afterward?
 
-2. Support synchronous launching. 
-    - E.g. we can launch a process, run some checks, and then proceed. 
+2. [DONE] Support synchronous launching.
+    - E.g. we can launch a process, run some checks, and then proceed.
     - More deterministic bringup/teardown
+      -- @script + Session: stages, waits, per-stage stop/restart; see design-notes Q26
+         and turtle_bringup_script.py
 
-In general, supporting some checks would be nice. 
+In general, supporting some checks would be nice.
     - Incorporating some basic tests like:
-        - Does node exist?
-        - Does topic exist?
-        - Is topic publishing?
+        - [DONE] Does node exist?        -- session.wait_for_node / node_names()
+        - [DONE] Does topic exist?       -- session.wait_for_topic
+        - [DONE] Is topic publishing?    -- session.wait_for_topic(publishers=N)
+    - Still missing: these are only available inside a script, not as checks a
+      plain launch declares.
 
 3. Tmux incorporation?
     - Optionally launch all processes in different tmux panes? For debugging?

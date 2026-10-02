@@ -35,7 +35,11 @@ import os
 import re
 import sys
 
-from .core import TypedLaunch
+from .core import TypedTarget
+
+#: Filename suffixes tlaunch searches a package for: a typed launch, or an
+#: imperative script (see session.py). Both are addressed the same way.
+TARGET_SUFFIXES = ("_launch.py", "_script.py")
 
 
 class LaunchLookupError(Exception):
@@ -45,23 +49,23 @@ class LaunchLookupError(Exception):
 # realpath -> loaded launch, for the file-path route only. Module-based loads
 # need no cache of our own: importlib.import_module already returns the same
 # module (and thus the same TypedLaunch) every time.
-_LOADED_BY_PATH: dict[str, TypedLaunch] = {}
+_LOADED_BY_PATH: dict[str, TypedTarget] = {}
 
 
-def _typed_launch_from_module(module, where: str) -> TypedLaunch:
+def _typed_target_from_module(module, where: str) -> TypedTarget:
     entry = getattr(module, "generate_launch_description", None)
     if entry is None:
         raise LaunchLookupError(f"'{where}' does not define generate_launch_description")
-    typed = getattr(entry, "typed_launch", None)
-    if not isinstance(typed, TypedLaunch):
+    typed = getattr(entry, "typed_target", None)
+    if not isinstance(typed, TypedTarget):
         raise LaunchLookupError(
-            f"'{where}' is not a typed launch file (tlaunch only runs launch "
-            "files built with @launch); use 'ros2 launch' for it"
+            f"'{where}' is not a typed launch file (tlaunch only runs files built "
+            "with @launch or @script); use 'ros2 launch' for it"
         )
     return typed
 
 
-def _load_from_path(path: str) -> TypedLaunch:
+def _load_from_path(path: str) -> TypedTarget:
     real = os.path.realpath(path)
     if real in _LOADED_BY_PATH:
         return _LOADED_BY_PATH[real]
@@ -90,22 +94,22 @@ def _load_from_path(path: str) -> TypedLaunch:
             f"failed to load '{path}': {type(exc).__name__}: {exc}"
         ) from exc
 
-    typed = _typed_launch_from_module(module, path)
+    typed = _typed_target_from_module(module, path)
     _LOADED_BY_PATH[real] = typed
     return typed
 
 
 def _find_launch_files(package_module) -> dict[str, list[str]]:
-    """stem ("turtle_demo_launch") -> dotted module paths of every *_launch.py
-    file anywhere under the package, however deep (e.g. in a nested launch/
-    subpackage). A stem maps to more than one path only if two files in the
-    package happen to share a name."""
+    """stem ("turtle_demo_launch") -> dotted module paths of every target file
+    (``*_launch.py`` or ``*_script.py``) anywhere under the package, however
+    deep (e.g. in a nested launch/ subpackage). A stem maps to more than one
+    path only if two files in the package happen to share a name."""
     found: dict[str, list[str]] = {}
     for root in getattr(package_module, "__path__", []):
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d != "__pycache__"]
             for fname in filenames:
-                if not fname.endswith("_launch.py"):
+                if not fname.endswith(TARGET_SUFFIXES):
                     continue
                 rel = os.path.relpath(os.path.join(dirpath, fname), root)
                 dotted = f"{package_module.__name__}." + rel[:-3].replace(os.sep, ".")
@@ -114,7 +118,7 @@ def _find_launch_files(package_module) -> dict[str, list[str]]:
 
 
 def launch_file_names(package: str) -> list[str]:
-    """Every *_launch.py stem installed in `package`, sorted -- for tab completion.
+    """Every target-file stem installed in `package`, sorted -- for tab completion.
     Empty (not an error) if the package doesn't exist or isn't importable."""
     try:
         module = importlib.import_module(package)
@@ -123,7 +127,7 @@ def launch_file_names(package: str) -> list[str]:
     return sorted(_find_launch_files(module))
 
 
-def _load_from_module(package: str, name: str) -> TypedLaunch:
+def _load_from_module(package: str, name: str) -> TypedTarget:
     try:
         package_module = importlib.import_module(package)
     except ModuleNotFoundError as exc:
@@ -183,10 +187,10 @@ def _load_from_module(package: str, name: str) -> TypedLaunch:
             f"failed to load '{dotted}': {type(exc).__name__}: {exc}"
         ) from exc
 
-    return _typed_launch_from_module(module, dotted)
+    return _typed_target_from_module(module, dotted)
 
 
-def resolve(*target: str) -> TypedLaunch:
+def resolve(*target: str) -> TypedTarget:
     """``(path,)`` or ``(package, file)`` -> the typed launch it holds."""
     if not target:
         raise LaunchLookupError("no launch given")
@@ -201,7 +205,7 @@ def resolve(*target: str) -> TypedLaunch:
     raise LaunchLookupError("expected a path, or '<package> <file>'")
 
 
-def load_launch(*target: str) -> TypedLaunch:
+def load_launch(*target: str) -> TypedTarget:
     """Load a typed launch, for use with ``include``.
 
         load_launch("/path/to/standalone_launch.py")
