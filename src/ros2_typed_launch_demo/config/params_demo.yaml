@@ -13,7 +13,9 @@ launch_args:
   ros__parameters:
     use_sim_time: false
 
-/demo/turtlesim:
+# The pattern can be built from a launch argument too, so this section follows
+# --namespace instead of hard-coding it.
+/$(var namespace)/turtlesim:
   ros__parameters:
     # Deliberately in conflict: holonomic is also a typed field of the schema,
     # so the typed value wins and tlaunch warns, naming both.
@@ -23,10 +25,13 @@ launch_args:
     # a node in a namespace -- turtlesim subscribes to turtle1/cmd_vel, which
     # resolves to /demo/turtle1/cmd_vel. Writing "/turtle1/cmd_vel" here would
     # match nothing (ROS remap rules, not ours).
-    turtle1/cmd_vel: /joy_vel
+    # $(var NAME) reads one of *this launch's* arguments, by its dotted path,
+    # so the remap follows --namespace wherever it is set. Launch arguments are
+    # resolved before the node sections, which is what makes this work.
+    turtle1/cmd_vel: /$(var namespace)/joy_vel
 
 # A pattern that matches nothing warns rather than failing -- it may be aimed at
 # a node behind a disabled toggle. --strict turns that into an error.
-/demo/not_launched:
+/$(var namespace)/not_launched:
   ros__parameters:
     unused: 1

@@ -40,8 +40,17 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   no schema at all. That is the answer to param-heavy nodes: you never restate 100 fields.
   `--ros-param '[PATTERN:]name=value'` / `--ros-remap '[PATTERN:]from=to'` are the CLI
   equivalents (pattern defaults to `/**`, values parsed as YAML). `$(...)` in any value is
-  expanded at load time by the **stock** launch parser — `$(find-pkg-share p)`,
+  expanded by the **stock** launch parser — `$(find-pkg-share p)`,
   `$(env VAR [default])`, `$(command ...)`, `$(eval ...)`; see `subst.py`.
+  **`$(var NAME)` reads this launch's own arguments** by dotted path
+  (`/$(var turtlesim.namespace)/joy_vel`), so expansion happens in two stages:
+  `launch_args` as each file is read (and `$(var ...)` is refused there — no argument
+  built from another), then the node sections, **values and pattern key**, once the args
+  are merged and validated, which is what lets a CLI override reach them. A `$(var ...)`
+  naming no argument of this launch is caught **against the schema, together with the
+  unknown-key check** (so a config meant for another launch reports every mismatch at
+  once, before expanding anything). A substitution always yields **text**, so a parameter
+  built from one is a string (Q25 has the open question about re-parsing).
 - **`node(...)`** (our wrapper over `launch_ros`'s `Node`) is what collects it, merging every
   matching section into that node's parameters/remappings. `params=` takes a **`RosParams`**
   model — a schema section that *is* a node's ROS parameters, declared once and delivered

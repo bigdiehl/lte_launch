@@ -3,7 +3,16 @@
 A config file has two parts: the launch's own settings under ``launch_args:``
 (validated against its schema) and node-pattern sections carrying ROS parameters
 and remappings (untyped, see ``ros_config.py``). ``$(...)`` in any value is
-expanded when the file is read (see ``subst.py``).
+expanded by the stock launch parser (see ``subst.py``), but **in two stages**,
+because one substitution reads the config itself:
+
+1. ``launch_args`` are expanded as each file is read -- after their keys have been
+   checked against the schema, so a key that does not belong to this launch is
+   reported before a substitution that cannot be resolved;
+2. the node sections are expanded **once the launch args are merged and
+   validated**, which is what lets ``$(var NAME)`` in a section read a launch
+   argument by its dotted path (``$(var turtlesim.namespace)``). Launch args
+   cannot refer to each other -- see ``reject_vars``.
 """
 
 from __future__ import annotations
@@ -86,10 +95,11 @@ def load_config_file(path: str) -> dict:
     return data
 
 
-def expand_values(value: Any, source: str) -> Any:
+def expand_values(value: Any, source: str,
+                  variables: dict[str, str] | None = None) -> Any:
     """Expand ``$(...)`` in every string in ``value`` (see ``subst.py``)."""
     try:
-        return subst.expand(value, source)
+        return subst.expand(value, source, variables)
     except subst.SubstitutionError as exc:
         raise ConfigFileError(str(exc)) from None
 
@@ -126,6 +136,123 @@ def split_file(data: dict, source: str) -> tuple[dict, list[rc.Section]]:
         return launch_args, rc.parse_sections(data, source)
     except rc.RosConfigError as exc:
         raise ConfigFileError(str(exc)) from None
+
+
+def variables(launch_args: dict) -> tuple[dict[str, str], dict[str, str]]:
+    """Validated launch args -> what ``$(var NAME)`` may read.
+
+    Returns ``(usable, unusable)``: every single-valued argument by its dotted
+    path, as the string a substitution produces (``true``/``false`` for bools,
+    as in launch's own spelling), plus the ones that have no string form, each
+    with the reason, so the error can say why rather than "does not exist".
+    """
+    usable: dict[str, str] = {}
+    unusable: dict[str, str] = {}
+    for name, value in rc.flatten_params(launch_args).items():
+        if isinstance(value, bool):
+            usable[name] = "true" if value else "false"
+        elif isinstance(value, (int, float, str)):
+            usable[name] = str(value)
+        elif value is None:
+            unusable[name] = "is not set"
+        elif isinstance(value, list):
+            unusable[name] = "is a list"
+        else:
+            unusable[name] = f"is a {type(value).__name__}"
+    return usable, unusable
+
+
+def unknown_vars(sections: list[rc.Section], known: set[str]) -> list[str]:
+    """``$(var NAME)`` in a node section naming no argument of this launch.
+
+    Checked against the **schema**, next to the unknown-key check and before
+    anything is expanded, because it answers the same question: does this config
+    belong to this launch at all? Returns one line per problem.
+    """
+    import difflib
+
+    problems = []
+    for section in sections:
+        places = (
+            (section.pattern, section.pattern),
+            (f"{section.pattern}.{rc.PARAMS_KEY}", section.params),
+            (f"{section.pattern}.{rc.REMAPS_KEY}", section.remaps),
+        )
+        for where, value in places:
+            for name in subst.var_names(value):
+                if name in known:
+                    continue
+                close = difflib.get_close_matches(name, sorted(known), n=1)
+                hint = f" (did you mean '{close[0]}'?)" if close else ""
+                problems.append(
+                    f"{where}: $(var {name}) is not an argument of this launch{hint}"
+                )
+    return problems
+
+
+def check_vars(value: Any, where: str, usable: dict[str, str],
+               unusable: dict[str, str]) -> None:
+    """Fail on a ``$(var NAME)`` we cannot answer, saying which name and why."""
+    import difflib
+
+    for name in subst.var_names(value):
+        if name in usable:
+            continue
+        if name in unusable:
+            raise ConfigFileError(
+                f"{where}: $(var {name}) cannot be used: launch argument "
+                f"'{name}' {unusable[name]}"
+            )
+        # Unknown names are normally caught against the schema, before this
+        # (see unknown_vars); this is the backstop when expand_sections is
+        # called on its own.
+        known = sorted(usable) + sorted(unusable)
+        close = difflib.get_close_matches(name, known, n=1)
+        hint = f" (did you mean '{close[0]}'?)" if close else ""
+        raise ConfigFileError(
+            f"{where}: $(var {name}) is not an argument of this launch{hint}"
+        )
+
+
+def reject_vars(launch_args: dict, source: str) -> None:
+    """``$(var ...)`` is not allowed in ``launch_args`` itself.
+
+    It reads the launch's arguments, which are still being assembled at that
+    point -- allowing it would mean arguments that refer to each other, and
+    cycles with them.
+    """
+    names = subst.var_names(launch_args)
+    if names:
+        raise ConfigFileError(
+            f"in '{source}': $(var {names[0]}) under '{rc.LAUNCH_ARGS_KEY}': a "
+            "launch argument cannot be built from another one (write the value "
+            "out, or use $(var ...) in a node section, where the arguments are "
+            "already known)"
+        )
+
+
+def expand_sections(sections: list[rc.Section], launch_args: dict) -> None:
+    """Expand ``$(...)`` in the untyped lanes, in place.
+
+    Called once the launch args are final, so ``$(var NAME)`` can read them.
+    """
+    usable, unusable = variables(launch_args)
+    for section in sections:
+        where = f"{section.source}:{section.pattern}"
+        # The pattern itself can be built from an argument, so a config aimed at
+        # a namespaced node follows --namespace instead of hard-coding it.
+        if subst.MARKER in section.pattern:
+            check_vars(section.pattern, where, usable, unusable)
+            section.retarget(expand_values(section.pattern, where, usable))
+        for key, values in ((rc.PARAMS_KEY, section.params),
+                            (rc.REMAPS_KEY, section.remaps)):
+            check_vars(values, f"{where}.{key}", usable, unusable)
+        section.params = expand_values(
+            section.params, f"{where}.{rc.PARAMS_KEY}", usable
+        )
+        section.remaps = expand_values(
+            section.remaps, f"{where}.{rc.REMAPS_KEY}", usable
+        )
 
 
 def deep_merge(base: dict, over: dict) -> dict:

@@ -284,6 +284,70 @@ def test_launch_args_is_checked_against_the_schema_but_node_sections_are_not(
         assert code == 2 and expected in err
 
 
+def test_var_in_a_node_section_reads_the_launchs_own_arguments(
+    sample_launch, write, capsys
+):
+    """The point of the two-stage expansion: node config can be written once and
+    follow whatever the launch argument ends up being, including from the CLI."""
+    pytest.importorskip("launch_ros")
+    path = write(
+        "c.yaml",
+        "launch_args: {map: m, robot: {name: rover}}\n"
+        "/$(var robot.name)/driver:\n"
+        "  ros__parameters: {tag: $(var robot.name)-1}\n"
+        "  ros__remappings: {cmd: /$(var robot.name)/cmd}\n",
+        raw=True,
+    )
+    _, out, _ = run([sample_launch, "--config", path, "--show-config"], capsys)
+    assert '"/rover/driver":' in out
+    assert 'tag: "rover-1"' in out
+    assert '"cmd": "/rover/cmd"' in out
+
+    # ... and the command line is still the last word, pattern included.
+    _, out, _ = run(
+        [sample_launch, "--config", path, "--robot.name", "buggy", "--show-config"],
+        capsys,
+    )
+    assert '"/buggy/driver":' in out and '"cmd": "/buggy/cmd"' in out
+
+
+def test_a_var_naming_no_launch_argument_is_reported_with_the_unknown_keys(
+    sample_launch, write, capsys
+):
+    """Both answer "is this config for this launch?", so they are checked against
+    the schema in the same pass and reported together, before any expansion."""
+    path = write(
+        "c.yaml",
+        "launch_args: {map: m, not_a_field: 1}\n"
+        "/$(var nope)/x:\n"
+        "  ros__parameters: {a: $(var robo.name)}\n",
+        raw=True,
+    )
+    code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
+    assert code == 2
+    assert "not_a_field: unknown key" in err
+    assert "$(var nope) is not an argument of this launch" in err
+    assert "$(var robo.name) is not an argument of this launch" in err
+    assert "did you mean 'robot.name'" in err
+    assert "cannot expand" not in err          # nothing was expanded
+
+
+def test_a_var_on_the_command_line_is_checked_too(sample_launch, capsys):
+    code, _, err = run(
+        [sample_launch, "--map", "m", "--ros-param", "t=$(var nope)", "--show-config"],
+        capsys,
+    )
+    assert code == 2
+    assert "on the command line:" in err
+    assert "$(var nope) is not an argument of this launch" in err
+
+
+def test_a_launch_argument_cannot_use_var(sample_launch, write, capsys):
+    path = write("c.yaml", "map: m\ntags: ['$(var map)']\n")
+    code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
+    assert code == 2 and "cannot be built from another one" in err
+
+
 def test_a_schema_mismatch_is_reported_before_a_bad_substitution(
     sample_launch, write, capsys
 ):

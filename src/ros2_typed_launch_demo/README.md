@@ -188,6 +188,18 @@ the exit code up), and a composable node has no pid of its own at all.
 | `config/quiet.yaml` | `turtle_demo_launch.py` | an overlay: pass it *after* another file and watch it win |
 | `config/params_demo.yaml` | `turtle_params_launch.py` | all three parts: `launch_args`, `ros__parameters`, `ros__remappings`, including a deliberate typed/untyped conflict and a pattern that matches nothing |
 
+Values can use the stock launch substitutions (`$(env HOME)`, `$(find-pkg-share pkg)`,
+`$(command ...)`, `$(eval ...)`), plus **`$(var NAME)`, which reads one of this launch's own
+arguments** by its dotted path. `config/params_demo.yaml` uses it for both a remap and a section
+pattern, so everything follows `--namespace`:
+
+```bash
+tlaunch ros2_typed_launch_demo turtle_params_launch.py \
+    --config ros2_typed_launch_demo:config/params_demo.yaml --namespace alpha --show-config
+#   "/alpha/turtlesim":                  # -> /alpha/turtlesim
+#     "turtle1/cmd_vel": "/alpha/joy_vel"
+```
+
 A config file is addressed as a path, or as `<package>:<path>` for one installed in a package's
 share directory. `launch_args:` is checked against the launch's schema — an unknown or mistyped
 key there is an error, and `config/params_demo.yaml` is therefore rejected by

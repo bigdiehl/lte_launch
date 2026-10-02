@@ -1,6 +1,7 @@
 import pytest
 
 from ros2_typed_launch import config as cfg
+from ros2_typed_launch import ros_config as rc
 
 
 def test_deep_merge():
@@ -71,3 +72,68 @@ def test_resolve_config_ref_existing_file_beats_package_reading(tmp_path, monkey
 
 def test_resolve_config_ref_non_reference_passes_through():
     assert cfg.resolve_config_ref("no_such_dir/file.yaml") == "no_such_dir/file.yaml"
+
+
+# ------------------------------------------------- $(var ...): launch args as values
+def test_variables_turns_launch_args_into_substitution_values():
+    usable, unusable = cfg.variables(
+        {
+            "namespace": "demo",
+            "turtlesim": {"background_r": 69, "holonomic": False, "scale": 1.5},
+            "tags": ["a"],
+            "unset": None,
+        }
+    )
+    assert usable == {
+        "namespace": "demo",
+        "turtlesim.background_r": "69",
+        "turtlesim.holonomic": "false",     # launch's own spelling, not "False"
+        "turtlesim.scale": "1.5",
+    }
+    assert unusable == {"tags": "is a list", "unset": "is not set"}
+
+
+def test_unknown_vars_checks_sections_against_the_schemas_argument_names():
+    known = {"namespace", "robot.name"}
+    sections = [
+        rc.Section("/$(var nope)/x", {"a": "$(var robot.name)"},
+                   {"b": "$(var nmespace)"}, "a.yaml"),
+    ]
+    problems = cfg.unknown_vars(sections, known)
+    assert len(problems) == 2                       # robot.name is fine
+    assert "$(var nope) is not an argument of this launch" in problems[0]
+    assert "did you mean 'namespace'" in problems[1]
+    assert cfg.unknown_vars([rc.Section("/x", {}, {}, "a.yaml")], known) == []
+
+
+def test_check_vars_says_which_name_and_why():
+    usable, unusable = cfg.variables({"namespace": "demo", "tags": ["a"]})
+
+    cfg.check_vars("/$(var namespace)/x", "where", usable, unusable)   # fine
+
+    with pytest.raises(cfg.ConfigFileError, match="did you mean 'namespace'"):
+        cfg.check_vars("$(var nmespace)", "where", usable, unusable)
+    with pytest.raises(cfg.ConfigFileError, match="'tags' is a list"):
+        cfg.check_vars("$(var tags)", "where", usable, unusable)
+
+
+def test_a_launch_arg_cannot_be_built_from_another_one():
+    with pytest.raises(cfg.ConfigFileError, match="cannot be built from another one"):
+        cfg.reject_vars({"node_name": "$(var namespace)_node"}, "a.yaml")
+    cfg.reject_vars({"path": "$(env HOME)/x"}, "a.yaml")       # other substitutions are fine
+
+
+def test_expand_sections_resolves_values_and_the_pattern(monkeypatch):
+    pytest.importorskip("launch_ros")
+    sections = [
+        rc.Section("/$(var namespace)/turtlesim", {"n": "$(var turtlesim.background_r)"},
+                   {"turtle1/cmd_vel": "/$(var namespace)/joy_vel"}, "a.yaml"),
+    ]
+    cfg.expand_sections(sections, {"namespace": "alpha", "turtlesim": {"background_r": 7}})
+
+    section = sections[0]
+    assert section.pattern == "/alpha/turtlesim"
+    assert section.matches("/alpha/turtlesim")      # the recompiled pattern
+    assert not section.matches("/demo/turtlesim")
+    assert section.params == {"n": "7"}             # a substitution is always text
+    assert section.remaps == {"turtle1/cmd_vel": "/alpha/joy_vel"}

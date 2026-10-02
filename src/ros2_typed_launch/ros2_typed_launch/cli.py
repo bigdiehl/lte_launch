@@ -390,6 +390,12 @@ def layer_config(model: type, files: list[str], cli: dict[str, Any], own: dict):
     # this launch is always reported before a substitution that cannot be
     # resolved -- the schema mismatch is the more fundamental error, and it can
     # be in a different file than the bad substitution.
+    known = {".".join(spec.path) for spec in specs}
+    # The CLI's own sections are parsed up front so their $(var ...) names are
+    # checked with everyone else's; they are still applied last.
+    cli_sections = parse_ros_cli(own["ros_param"], "param") + parse_ros_cli(
+        own["ros_remap"], "remap"
+    )
     problems: list[str] = []
     loaded: list[tuple[str, dict, list[rc.Section]]] = []
     for ref in files:
@@ -397,31 +403,35 @@ def layer_config(model: type, files: list[str], cli: dict[str, Any], own: dict):
         launch_args, file_sections = cfg.split_file(data, ref)
         loaded.append((ref, launch_args, file_sections))
         issues = schema.unknown_keys(model, launch_args)
-        if issues:
+        strays = cfg.unknown_vars(file_sections, known)
+        if issues or strays:
             problems.append(f"in config file '{ref}':")
             problems.extend(_issue_lines(issues, as_flags=False))
+            problems.extend(f"  {line}" for line in strays)
+    strays = cfg.unknown_vars(cli_sections, known)
+    if strays:
+        problems.append("on the command line:")
+        problems.extend(f"  {line}" for line in strays)
     if problems:
         raise TlaunchError("\n".join(problems))
 
     for ref, launch_args, file_sections in loaded:
+        cfg.reject_vars(launch_args, ref)
         launch_args = cfg.expand_values(launch_args, ref)
-        for section in file_sections:
-            where = f"{ref}:{section.pattern}"
-            section.params = cfg.expand_values(section.params, f"{where}.{rc.PARAMS_KEY}")
-            section.remaps = cfg.expand_values(section.remaps, f"{where}.{rc.REMAPS_KEY}")
         sections.extend(file_sections)
         for spec in specs:
             if cfg.lookup(launch_args, spec.path)[0]:
                 sources[spec.path] = ref
         merged = cfg.deep_merge(merged, launch_args)
 
-    merged = cfg.deep_merge(merged, cfg.nest(cli))
+    from_cli = cfg.nest(cli)
+    cfg.reject_vars(from_cli, "cli")
+    merged = cfg.deep_merge(merged, cfg.expand_values(from_cli, "cli"))
     for dotted in cli:
         sources[tuple(dotted.split("."))] = "cli"
 
     # The CLI is the last word for the untyped lanes too.
-    sections.extend(parse_ros_cli(own["ros_param"], "param"))
-    sections.extend(parse_ros_cli(own["ros_remap"], "remap"))
+    sections.extend(cli_sections)
 
     ros = rc.RosConfig(sections, debug=own["debug"])
     if own["strict"] and ros:
@@ -604,6 +614,13 @@ def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
             "configuration error:\n"
             + "\n".join(_issue_lines(exc.issues, as_flags=True))
         ) from None
+
+    # Only now are the launch args final, which is what $(var NAME) in a node
+    # section reads (see config.expand_sections).
+    try:
+        cfg.expand_sections(ros.sections, schema.to_plain(config))
+    except cfg.ConfigFileError as exc:
+        raise TlaunchError(str(exc)) from None
 
     label = " ".join(target)
     if own["show_config"]:

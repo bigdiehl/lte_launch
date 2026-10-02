@@ -42,7 +42,7 @@ Status tags on open questions: **OPEN** (needs a decision) · **PARTLY** (part b
 | `include` | `include(child, config)` builds the child eagerly, returns a scoped `GroupAction`; parent namespace/params/remaps/env are inherited |
 | Own schema interface / `InputDict` | Deferred — see `schema-interface-and-input-dict.md` |
 | Node params/remaps from config | ROS-native node patterns (`/**`, `/**/node`, `/ns/*`), **not** invented per-node ids; wildcards **interpreted by us** for both lanes, because rcl implements them for params but refuses them for remappings. Keys `ros__parameters` / `ros__remappings`, at the file's top level; launch schema under a **required** `launch_args:`. Reaches nodes through **our `Node` wrapper**. Untyped by default; typable via a `RosParams` Pydantic type; `--strict` refuses the untyped lane. Fully decided, not built — Q8 |
-| `$(...)` in config files | Reuse `launch.frontend.parse_substitution` (the stock lark grammar), expanded **eagerly per string leaf** at load time. Not our own parser, not `ParameterFile`. Built — Q25 |
+| `$(...)` in config files | Reuse `launch.frontend.parse_substitution` (the stock lark grammar), expanded **eagerly per string leaf**. Not our own parser, not `ParameterFile`. **`$(var NAME)` reads this launch's own arguments** by dotted path, which splits expansion in two: `launch_args` when a file is read (no `$(var ...)` there), node sections — values *and* pattern — once the args are merged and validated. Built — Q25 |
 | Node-defined schemas | **Optional**: when a node ships a schema, `tlaunch -h` shows its parameters; when it doesn't, the untyped lane carries them. MoveIt's `generate_parameter_library` spec is *not installed* by its CMake macro, so discovery needs our own resource — Q24 |
 | Process monitoring | Every run records the processes it starts and **reports what died**: an error line naming the node, an end-of-run summary, and a **non-zero exit code** (launch itself returns 0 for a run whose node died). `/diagnostics` publishing is opt-in via `--diagnostics`, since it needs an rclpy node in the launch. Direct children only. Built — Q27 |
 | Imperative launching | `@script(config=...)` + a `Session`: the service owns the main thread, the script runs on a worker. `session.start()` returns a **stage handle** you drill into (`stage["planner"]`); Ctrl-C makes the current wait raise so the script's `finally` runs; the session always stops what it started; runnable as `tlaunch <pkg> <file>` **and** `python3 <file>`. Built — Q26 |
@@ -242,6 +242,47 @@ Open: expanding in keys too (leaning no); `$(dirname)` meaning the config file's
 — push it into the context as a local, and it settles half of Q6). `$(command ...)`/`$(eval ...)`
 run arbitrary code from a config file and are deliberately allowed: same trust level as the launch
 file itself.
+
+**`$(var NAME)` -- added 2026-10-02.** It reads a *launch configuration*, which a bare
+`LaunchContext` has none of, so it needed a meaning of ours: **the launch's own arguments, by
+dotted path** (`$(var turtlesim.namespace)`). That forced the expansion into **two stages**, since
+one substitution now depends on the config being resolved:
+
+1. `launch_args` are expanded as each file is read (after the schema check, so an unknown key is
+   reported first). `$(var ...)` is **rejected** here -- an argument built from another argument
+   means cycles -- with a message saying to write the value out or use it in a node section.
+2. **node sections are expanded after the args are merged and validated**, with
+   `context.launch_configurations` seeded from them (`config.variables`). That covers CLI overrides
+   too, so `--namespace alpha` reaches a remap written as `/$(var namespace)/joy_vel`.
+
+The **pattern key** is expanded as well (`/$(var namespace)/turtlesim:`, via `Section.retarget`),
+because a section keyed on a hard-coded namespace would silently stop matching the moment the
+namespace was overridden -- the worst kind of failure, since a non-matching section is only a
+warning.
+
+Names are checked **against the schema, in the same pass as the unknown-key check**
+(`config.unknown_vars`), because both answer the same question -- does this config belong to this
+launch? So a config aimed at another launch reports everything at once, before anything is expanded:
+
+```
+tlaunch: error: in config file 'params_demo.yaml':
+  namespace: unknown key
+  /$(var namespace)/turtlesim: $(var namespace) is not an argument of this launch (did you mean 'turtlesim.namespace'?)
+```
+
+`--ros-param`/`--ros-remap` are checked there too. What is left for expansion time is the case that
+needs values: an argument with no string form says why (`'tags' is a list`). Bools read as launch
+spells them (`true`/`false`).
+
+Verified live: `--namespace alpha` with `params_demo.yaml` produced a node actually subscribed to
+`/alpha/joy_vel` (`ros2 node info`), with the section pattern retargeted to `/alpha/turtlesim`.
+
+**Open, and a real foot-gun:** a substitution always produces **text**, so
+`ros__parameters: {port: $(env PORT)}` sets the *string* `"8080"`, and a node expecting an integer
+rejects it at runtime. Stock `ParameterFile(allow_substs=True)` does not have this problem because
+it substitutes into the raw file and re-parses the whole thing as YAML. The fix would be to re-parse
+a value that is **entirely** one substitution (`"69"` -> `69`), leaving mixed strings
+(`/$(var ns)/joy_vel`) alone. Not done: it changes types of existing configs, so it wants a decision.
 
 ### Node parameter schemas and introspection (Q24) — DEFERRED (parked 2026-09-27)
 

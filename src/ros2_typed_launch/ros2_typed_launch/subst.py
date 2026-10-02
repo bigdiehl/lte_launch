@@ -20,16 +20,37 @@ See working/design-notes.md, Q25.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 MARKER = "$("
+
+#: ``$(var NAME)`` -- the one substitution whose meaning is ours to supply: it
+#: reads a *launch configuration*, and we seed those from the launch's own
+#: validated arguments (see ``config.expand_sections``).
+VAR = re.compile(r"\$\(\s*var\s+([^\s)]+)")
 
 
 class SubstitutionError(ValueError):
     """A ``$(...)`` that could not be expanded: printed without a traceback."""
 
 
-def _expand_text(text: str, where: str) -> str:
+def var_names(value: Any) -> list[str]:
+    """Every name used in a ``$(var NAME)`` anywhere in ``value``, in order.
+
+    Checked before expanding, so an unknown name is reported as what it is
+    rather than as launch's "launch configuration 'x' does not exist".
+    """
+    if isinstance(value, str):
+        return VAR.findall(value)
+    if isinstance(value, dict):
+        return [name for item in value.values() for name in var_names(item)]
+    if isinstance(value, list):
+        return [name for item in value for name in var_names(item)]
+    return []
+
+
+def _expand_text(text: str, where: str, variables: dict[str, str] | None) -> str:
     # Imported lazily, and only for a value that actually needs it, so that
     # config loading (and most tests) still work with no ROS on the path.
     try:
@@ -44,8 +65,13 @@ def _expand_text(text: str, where: str) -> str:
             "value out in full"
         ) from None
 
+    context = LaunchContext()
+    if variables:
+        # What $(var NAME) reads. A launch file would push these itself; we fill
+        # them in from the launch's own arguments.
+        context.launch_configurations.update(variables)
     try:
-        return perform_substitutions(LaunchContext(), parse_substitution(text))
+        return perform_substitutions(context, parse_substitution(text))
     except Exception as exc:
         # Unwrap lark's VisitError, whose str() buries the real cause under a
         # "Error trying to process rule" preamble.
@@ -53,16 +79,21 @@ def _expand_text(text: str, where: str) -> str:
         raise SubstitutionError(f"{where}: cannot expand '{text}': {cause}") from None
 
 
-def expand(value: Any, where: str = "config") -> Any:
+def expand(value: Any, where: str = "config",
+           variables: dict[str, str] | None = None) -> Any:
     """Expand ``$(...)`` in every string in ``value`` (recursively).
 
-    Anything without a ``$(`` is returned untouched, so a config with no
-    substitutions never loads the parser at all.
+    ``variables`` are what ``$(var NAME)`` can read. Anything without a ``$(``
+    is returned untouched, so a config with no substitutions never loads the
+    parser at all.
     """
     if isinstance(value, str):
-        return _expand_text(value, where) if MARKER in value else value
+        return _expand_text(value, where, variables) if MARKER in value else value
     if isinstance(value, dict):
-        return {k: expand(v, f"{where}.{k}" if where else str(k)) for k, v in value.items()}
+        return {
+            k: expand(v, f"{where}.{k}" if where else str(k), variables)
+            for k, v in value.items()
+        }
     if isinstance(value, list):
-        return [expand(v, f"{where}[{i}]") for i, v in enumerate(value)]
+        return [expand(v, f"{where}[{i}]", variables) for i, v in enumerate(value)]
     return value

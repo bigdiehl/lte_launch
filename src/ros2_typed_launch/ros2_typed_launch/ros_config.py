@@ -80,6 +80,15 @@ class Section:
     def __post_init__(self):
         self._regex = pattern_regex(self.pattern)
 
+    def retarget(self, pattern: str) -> None:
+        """Point this section at another pattern, recompiling it.
+
+        Used once ``$(...)`` in the pattern has been expanded, so a section can
+        be keyed on a launch argument (``/$(var namespace)/turtlesim``).
+        """
+        self.pattern = pattern
+        self._regex = pattern_regex(pattern)
+
     def matches(self, fqn: str) -> bool:
         return self._regex.match(fqn) is not None
 

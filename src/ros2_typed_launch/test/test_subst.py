@@ -39,3 +39,28 @@ def test_a_failed_substitution_names_the_key_and_the_cause():
         subst.expand("$(not-a-substitution x)")
     assert "Unknown substitution" in str(exc.value)
     assert "VisitError" not in str(exc.value)   # lark's wrapper is unwrapped
+
+
+def test_var_names_finds_every_variable_a_value_asks_for():
+    # Scanned before expanding, so an unknown name can be reported as such.
+    assert subst.var_names("/$(var namespace)/joy_vel") == ["namespace"]
+    assert subst.var_names("$(var a.b) and $(var c)") == ["a.b", "c"]
+    assert subst.var_names("$( var  spaced )") == ["spaced"]
+    assert subst.var_names("$(env HOME)") == []
+    assert subst.var_names({"k": ["$(var x)", {"j": "$(var y.z)"}]}) == ["x", "y.z"]
+
+
+def test_var_reads_the_variables_it_is_given():
+    pytest.importorskip("launch_ros")
+    variables = {"namespace": "alpha", "turtlesim.background_r": "69"}
+    assert subst.expand("/$(var namespace)/joy_vel", variables=variables) == "/alpha/joy_vel"
+    assert subst.expand("$(var turtlesim.background_r)", variables=variables) == "69"
+    # Mixed with another substitution, and nested.
+    out = subst.expand({"a": ["$(var namespace)-$(env HOME)"]}, variables=variables)
+    assert out["a"][0].startswith("alpha-/")
+
+
+def test_var_without_variables_fails_like_any_missing_configuration():
+    pytest.importorskip("launch_ros")
+    with pytest.raises(subst.SubstitutionError, match="does not exist"):
+        subst.expand("$(var namespace)")
