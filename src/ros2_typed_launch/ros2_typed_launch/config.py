@@ -167,26 +167,27 @@ def unknown_vars(sections: list[rc.Section], known: set[str]) -> list[str]:
 
     Checked against the **schema**, next to the unknown-key check and before
     anything is expanded, because it answers the same question: does this config
-    belong to this launch at all? Returns one line per problem.
+    belong to this launch at all? One line per distinct name, however many places
+    use it -- a config written for another launch mentions the same argument over
+    and over, and repeating it says nothing new.
     """
     import difflib
 
-    problems = []
+    seen: dict[str, int] = {}
     for section in sections:
-        places = (
-            (section.pattern, section.pattern),
-            (f"{section.pattern}.{rc.PARAMS_KEY}", section.params),
-            (f"{section.pattern}.{rc.REMAPS_KEY}", section.remaps),
-        )
-        for where, value in places:
+        for value in (section.pattern, section.params, section.remaps):
             for name in subst.var_names(value):
-                if name in known:
-                    continue
-                close = difflib.get_close_matches(name, sorted(known), n=1)
-                hint = f" (did you mean '{close[0]}'?)" if close else ""
-                problems.append(
-                    f"{where}: $(var {name}) is not an argument of this launch{hint}"
-                )
+                if name not in known:
+                    seen[name] = seen.get(name, 0) + 1
+
+    problems = []
+    for name, count in seen.items():
+        close = difflib.get_close_matches(name, sorted(known), n=1)
+        hint = f" (did you mean '{close[0]}'?)" if close else ""
+        places = "" if count == 1 else f", used {count} times"
+        problems.append(
+            f"$(var {name}): not an argument of this launch{places}{hint}"
+        )
     return problems
 
 
@@ -243,7 +244,8 @@ def expand_sections(sections: list[rc.Section], launch_args: dict) -> None:
         # a namespaced node follows --namespace instead of hard-coding it.
         if subst.MARKER in section.pattern:
             check_vars(section.pattern, where, usable, unusable)
-            section.retarget(expand_values(section.pattern, where, usable))
+            # tidy, not checked: a pattern is ours, and carries * and **.
+            section.retarget(rc.tidy(expand_values(section.pattern, where, usable)))
         for key, values in ((rc.PARAMS_KEY, section.params),
                             (rc.REMAPS_KEY, section.remaps)):
             check_vars(values, f"{where}.{key}", usable, unusable)
@@ -253,6 +255,16 @@ def expand_sections(sections: list[rc.Section], launch_args: dict) -> None:
         section.remaps = expand_values(
             section.remaps, f"{where}.{rc.REMAPS_KEY}", usable
         )
+        # Both sides of a remap are ROS names, and they are the one thing here
+        # that reaches rcl as a name, so they are repaired and checked now.
+        try:
+            section.remaps = {
+                rc.check_name(key, f"{where}.{rc.REMAPS_KEY}"):
+                rc.check_name(str(value), f"{where}.{rc.REMAPS_KEY}.{key}")
+                for key, value in section.remaps.items()
+            }
+        except rc.RosConfigError as exc:
+            raise ConfigFileError(str(exc)) from None
 
 
 def deep_merge(base: dict, over: dict) -> dict:

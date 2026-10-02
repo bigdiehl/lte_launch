@@ -101,9 +101,21 @@ def test_unknown_vars_checks_sections_against_the_schemas_argument_names():
     ]
     problems = cfg.unknown_vars(sections, known)
     assert len(problems) == 2                       # robot.name is fine
-    assert "$(var nope) is not an argument of this launch" in problems[0]
+    assert "$(var nope): not an argument of this launch" in problems[0]
     assert "did you mean 'namespace'" in problems[1]
     assert cfg.unknown_vars([rc.Section("/x", {}, {}, "a.yaml")], known) == []
+
+
+def test_unknown_vars_reports_a_repeated_name_once():
+    """A config meant for another launch names the same argument everywhere;
+    saying so four times adds nothing."""
+    sections = [
+        rc.Section("/$(var ns)/a", {"p": "$(var ns)"}, {"r": "$(var ns)"}, "a.yaml"),
+        rc.Section("/$(var ns)/b", {}, {}, "a.yaml"),
+    ]
+    problems = cfg.unknown_vars(sections, {"namespace"})
+    assert len(problems) == 1
+    assert "used 4 times" in problems[0]
 
 
 def test_check_vars_says_which_name_and_why():
@@ -137,3 +149,25 @@ def test_expand_sections_resolves_values_and_the_pattern(monkeypatch):
     assert not section.matches("/demo/turtlesim")
     assert section.params == {"n": "7"}             # a substitution is always text
     assert section.remaps == {"turtle1/cmd_vel": "/alpha/joy_vel"}
+
+
+def test_an_empty_argument_does_not_leave_a_double_slash_behind():
+    """The case that makes this matter: an empty namespace substituted into a
+    path. ROS would reject '//joy_vel'; the node means '/joy_vel'."""
+    pytest.importorskip("launch_ros")
+    sections = [
+        rc.Section("/$(var namespace)/turtlesim", {},
+                   {"turtle1/cmd_vel": "/$(var namespace)/joy_vel"}, "a.yaml"),
+    ]
+    cfg.expand_sections(sections, {"namespace": ""})
+
+    assert sections[0].pattern == "/turtlesim"
+    assert sections[0].matches("/turtlesim")
+    assert sections[0].remaps == {"turtle1/cmd_vel": "/joy_vel"}
+
+
+def test_a_remap_name_that_ros_would_refuse_is_a_config_error():
+    pytest.importorskip("rclpy")
+    sections = [rc.Section("/**", {}, {"turtle1/cmd_vel": "joy vel"}, "a.yaml")]
+    with pytest.raises(cfg.ConfigFileError, match="is not a valid ROS name"):
+        cfg.expand_sections(sections, {})

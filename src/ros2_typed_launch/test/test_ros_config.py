@@ -102,3 +102,32 @@ def test_split_file_rejects_the_old_bare_root_shape(write):
     path = write("c.yaml", "turtlesim: {background_r: 99}\n", raw=True)
     with pytest.raises(cfg.ConfigFileError, match=r"go under 'launch_args:'"):
         cfg.split_file(cfg.load_config_file(path), path)
+
+
+# ------------------------------------------------- names handed to rcl (// etc.)
+def test_tidy_repairs_what_substitution_produces():
+    # An empty namespace is the root, so "//joy_vel" means "/joy_vel" -- but ROS
+    # rejects a repeated slash outright, and a node handed one aborts at startup.
+    assert rc.tidy("//joy_vel") == "/joy_vel"
+    assert rc.tidy("/demo//turtlesim") == "/demo/turtlesim"
+    assert rc.tidy("///a///b//") == "/a/b"
+    assert rc.tidy("/demo/") == "/demo"
+    assert rc.tidy("/") == "/"                      # the root survives
+    assert rc.tidy("turtle1/cmd_vel") == "turtle1/cmd_vel"
+
+
+def test_check_name_accepts_every_legal_remap_form():
+    pytest.importorskip("rclpy")
+    for name in ["/joy_vel", "turtle1/cmd_vel", "~/cmd_vel", "{ns}/cmd_vel"]:
+        assert rc.check_name(name, "where") == name
+    assert rc.check_name("//joy_vel", "where") == "/joy_vel"
+
+
+def test_check_name_turns_an_rcl_abort_into_a_config_error():
+    """Unchecked, 'joy vel' reaches the node as a remap rule and it dies with
+    "Couldn't parse remap rule ... Error: error not set" and SIGABRT."""
+    pytest.importorskip("rclpy")
+    with pytest.raises(rc.RosConfigError, match="is not a valid ROS name"):
+        rc.check_name("joy vel", "a.yaml:/**.ros__remappings")
+    with pytest.raises(rc.RosConfigError, match="where: '' is not a valid"):
+        rc.check_name("", "where")

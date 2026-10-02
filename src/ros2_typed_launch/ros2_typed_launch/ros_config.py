@@ -49,6 +49,43 @@ def is_node_pattern(key: str, value: Any) -> bool:
     return isinstance(value, dict) and any(k in value for k in SECTION_KEYS)
 
 
+def tidy(name: str) -> str:
+    """Collapse repeated slashes and drop a trailing one.
+
+    Both are meaning-preserving repairs of what substitution naturally produces:
+    ``/$(var namespace)/joy_vel`` with an empty namespace reads ``//joy_vel``,
+    and an empty namespace *is* the root, so ``/joy_vel`` is what was meant.
+    ROS does not see it that way -- a repeated ``/`` is an invalid name, and a
+    node handed one aborts at startup with "Couldn't parse remap rule ... Error:
+    error not set" -- so we repair it before it gets there.
+    """
+    tidied = re.sub(r"/{2,}", "/", name)
+    return tidied if tidied == "/" else tidied.rstrip("/")
+
+
+def check_name(name: str, where: str) -> str:
+    """``tidy`` plus ROS's own name check, so a bad name is a config error here
+    rather than a SIGABRT inside the node.
+
+    Uses ``rclpy``'s validator -- the authority, and it accepts every legal form
+    a remap can take (relative, ``~/topic``, ``{substitution}/topic``). Skipped
+    if rclpy cannot be imported, so config handling still works without ROS.
+    """
+    tidied = tidy(name)
+    try:
+        from rclpy.validate_topic_name import validate_topic_name
+    except ImportError:
+        return tidied
+    try:
+        validate_topic_name(tidied)
+    except Exception as exc:
+        detail = str(exc).splitlines()[0]
+        raise RosConfigError(
+            f"{where}: '{name}' is not a valid ROS name: {detail}"
+        ) from None
+    return tidied
+
+
 def pattern_regex(pattern: str) -> re.Pattern:
     """A node pattern -> a regex matching fully-qualified node names.
 

@@ -326,9 +326,10 @@ def test_a_var_naming_no_launch_argument_is_reported_with_the_unknown_keys(
     code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
     assert code == 2
     assert "not_a_field: unknown key" in err
-    assert "$(var nope) is not an argument of this launch" in err
-    assert "$(var robo.name) is not an argument of this launch" in err
+    assert "$(var nope): not an argument of this launch" in err
+    assert "$(var robo.name): not an argument of this launch" in err
     assert "did you mean 'robot.name'" in err
+    assert "written for another launch" in err  # both kinds at once says why
     assert "cannot expand" not in err          # nothing was expanded
 
 
@@ -339,7 +340,7 @@ def test_a_var_on_the_command_line_is_checked_too(sample_launch, capsys):
     )
     assert code == 2
     assert "on the command line:" in err
-    assert "$(var nope) is not an argument of this launch" in err
+    assert "$(var nope): not an argument of this launch" in err
 
 
 def test_a_launch_argument_cannot_use_var(sample_launch, write, capsys):

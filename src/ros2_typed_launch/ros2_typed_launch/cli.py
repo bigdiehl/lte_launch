@@ -408,6 +408,12 @@ def layer_config(model: type, files: list[str], cli: dict[str, Any], own: dict):
             problems.append(f"in config file '{ref}':")
             problems.extend(_issue_lines(issues, as_flags=False))
             problems.extend(f"  {line}" for line in strays)
+            if issues and strays:
+                # Both at once means the file is describing a different launch,
+                # which is more useful to say than either line on its own.
+                problems.append(
+                    "  (this config looks like it was written for another launch)"
+                )
     strays = cfg.unknown_vars(cli_sections, known)
     if strays:
         problems.append("on the command line:")

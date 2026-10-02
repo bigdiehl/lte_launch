@@ -247,6 +247,12 @@ timeout --foreground -s INT 20 tlaunch ... > log 2>&1
 - A `ros__remappings` "from" side is the name **as the node uses it**, so a node in a
   namespace needs the relative spelling (`turtle1/cmd_vel`, not `/turtle1/cmd_vel`). ROS's
   rule, not ours; the wrong form silently remaps nothing.
+- **A repeated `/` in a ROS name is fatal, not cosmetic**: a node handed `-r a:=//b` aborts at
+  startup with `Couldn't parse remap rule ... Error: error not set` (rcl does not even set an
+  error) and SIGABRT. Substituting an empty argument into a path produces exactly that, so
+  `rc.tidy` collapses `//` and trailing `/` in remap names and patterns, and `rc.check_name`
+  runs `rclpy.validate_topic_name` on both sides of every remap before launching. Parameter
+  *values* are not names and are left alone.
 - **A dying process does not change launch's exit code** — `LaunchService.run()` returns 0 even
   when a process died with rc=3 (verified). Only the `[ERROR] ... process has died` log line
   says so. See design-notes Q27.

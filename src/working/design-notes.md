@@ -277,6 +277,21 @@ spells them (`true`/`false`).
 Verified live: `--namespace alpha` with `params_demo.yaml` produced a node actually subscribed to
 `/alpha/joy_vel` (`ros2 node info`), with the section pattern retargeted to `/alpha/turtlesim`.
 
+**Names are repaired and checked (2026-10-02).** An empty argument substituted into a path leaves
+a repeated slash -- `/$(var namespace)/joy_vel` with `namespace: ""` reads `//joy_vel` -- and ROS
+rejects that outright. Checked, not assumed: a node handed it **aborts at startup** with
+`Couldn't parse remap rule: '-r turtle1/cmd_vel:=//joy_vel'. Error: error not set` and SIGABRT, i.e.
+rcl does not even report a reason. So after expansion:
+
+* `rc.tidy` collapses repeated slashes and drops a trailing one, on **remap names and the pattern**.
+  Both repairs preserve meaning -- an empty namespace *is* the root, so `/joy_vel` is what was meant,
+  and our pattern matcher already read `//turtlesim` as `/turtlesim`;
+* `rc.check_name` then runs ROS's **own** validator (`rclpy.validate_topic_name`, which accepts every
+  legal remap form: relative, `~/topic`, `{substitution}/topic`) on both sides of every remap, so a
+  bad name is a config error naming the key instead of a dead node. 64 ms to import, 0.3 µs a call.
+
+Parameter *values* are left alone -- they are not names, and a value may legitimately contain `//`.
+
 **Open, and a real foot-gun:** a substitution always produces **text**, so
 `ros__parameters: {port: $(env PORT)}` sets the *string* `"8080"`, and a node expecting an integer
 rejects it at runtime. Stock `ParameterFile(allow_substs=True)` does not have this problem because
