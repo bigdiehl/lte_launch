@@ -659,6 +659,28 @@ def print_general_help() -> None:
     )
 
 
+def configure(typed: TypedTarget, files: list[str], cli: dict[str, Any], own: dict,
+              *, as_flags: bool = True):
+    """Layer, validate and expand: -> (config, sources, RosConfig).
+
+    Every problem is a ``TlaunchError`` with the issues listed by flag. Shared by
+    the command and by a stock include (``stock.py``)."""
+    try:
+        merged, sources, ros = layer_config(typed.config_type, files, cli, own)
+        config = schema.validate(typed.config_type, merged)
+        # Only now are the launch args final, which is what $(var NAME) in a
+        # node section reads (see config.expand_sections).
+        cfg.expand_sections(ros.sections, schema.to_plain(config))
+    except cfg.ConfigFileError as exc:
+        raise TlaunchError(str(exc)) from None
+    except schema.SchemaError as exc:
+        raise TlaunchError(
+            "configuration error:\n"
+            + "\n".join(_issue_lines(exc.issues, as_flags=as_flags))
+        ) from None
+    return config, sources, ros
+
+
 def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
     debug = "-d" in argv or "--debug" in argv
 
@@ -691,23 +713,7 @@ def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
         print(json.dumps(schema.json_schema(typed.config_type), indent=2))
         return 0
 
-    try:
-        merged, sources, ros = layer_config(typed.config_type, files, ns, own)
-        config = schema.validate(typed.config_type, merged)
-    except cfg.ConfigFileError as exc:
-        raise TlaunchError(str(exc)) from None
-    except schema.SchemaError as exc:
-        raise TlaunchError(
-            "configuration error:\n"
-            + "\n".join(_issue_lines(exc.issues, as_flags=True))
-        ) from None
-
-    # Only now are the launch args final, which is what $(var NAME) in a node
-    # section reads (see config.expand_sections).
-    try:
-        cfg.expand_sections(ros.sections, schema.to_plain(config))
-    except cfg.ConfigFileError as exc:
-        raise TlaunchError(str(exc)) from None
+    config, sources, ros = configure(typed, files, ns, own)
 
     label = " ".join(target)
     if own["show_config"]:

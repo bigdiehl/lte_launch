@@ -36,12 +36,77 @@ def test_include():
     with pytest.raises(TypeError, match="ChildConfig expected, got OtherConfig"):
         include(child, OtherConfig())
 
-    with pytest.raises(RuntimeError, match="run it with 'tlaunch'"):
-        child.generate_launch_description()
-
 
 
 # --------------------------------------------------------- stock interop
+class Inner(BaseModel):
+    r: int = Field(0, ge=0, le=255, description="Red")
+    enabled: bool = True
+    tags: list[str] = []
+
+
+class StockConfig(BaseModel):
+    name: str
+    inner: Inner = Inner()
+
+
+@launch(config=StockConfig)
+def stocked(config):
+    return [config]                 # the built config, to look at
+
+
+def run_stock(typed, **args):
+    """What stock does with an include: set the arguments, then run each entity.
+    -> the launch's actions (here: its config)."""
+    from launch import LaunchContext
+
+    context = LaunchContext()
+    context.launch_configurations.update(args)
+    *head, build = typed.generate_launch_description().entities
+    for entity in head:
+        entity.visit(context)
+    return build.visit(context)[0]
+
+
+def test_stock_launch_includes_a_typed_one(tmp_path):
+    from launch.actions import DeclareLaunchArgument
+
+    declared = {
+        e.name: e for e in stocked.generate_launch_description().entities
+        if isinstance(e, DeclareLaunchArgument)
+    }
+    assert list(declared) == ["name", "inner.r", "inner.enabled", "inner.tags", "tlaunch_config"]
+    assert declared["name"].default_value is None           # required: stock checks it
+    assert declared["inner.r"].description == "Red (>=0, <=255)"
+
+    config = run_stock(stocked, name="a", **{"inner.r": "7", "inner.tags": "[x, y]"})
+    assert config == StockConfig(name="a", inner=Inner(r=7, tags=["x", "y"]))
+
+    # defaults < files < arguments; a declared default is not "given".
+    extra = tmp_path / "extra.yaml"
+    extra.write_text("launch_args: {inner: {r: 5, enabled: false}}\n")
+    config = run_stock(stocked, name="a", tlaunch_config=str(extra))
+    assert (config.inner.r, config.inner.enabled) == (5, False)
+    config = run_stock(stocked, name="a", tlaunch_config=str(extra), **{"inner.r": "9"})
+    assert config.inner.r == 9
+
+    # Errors read as tlaunch's do, named by argument.
+    with pytest.raises(Exception, match=r"(?s)typed launch 'stocked'.*inner\.r: ensure"):
+        run_stock(stocked, name="a", **{"inner.r": "999"})
+    with pytest.raises(Exception, match=r"did you mean 'inner\.enabled'"):
+        run_stock(stocked, name="a", **{"inner.enabld": "x"})
+
+    # A script has no launch description.
+    from ros2_typed_launch import script
+
+    @script(config=ChildConfig)
+    def scripted(session, config):
+        pass
+
+    with pytest.raises(RuntimeError, match="run it with 'tlaunch'"):
+        scripted.generate_launch_description()
+
+
 class Color(enum.Enum):
     RED = "red"
 

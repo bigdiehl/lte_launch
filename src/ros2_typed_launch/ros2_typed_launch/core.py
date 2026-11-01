@@ -49,11 +49,28 @@ class TypedScript(TypedTarget):
         return self.factory(session, config)
 
 
-def _entry_point(target: TypedTarget, kind: str) -> Callable:
-    """The ``generate_launch_description`` tlaunch finds a target through.
+def _stock_entry_point(target: TypedLaunch) -> Callable:
+    """The ``generate_launch_description`` tlaunch finds a launch through.
 
-    Stock ``ros2 launch`` looks for the same name, so it finds something and can
-    be told why it will not work, rather than reporting an empty launch file.
+    Stock launch calls the same name, and gets a real ``LaunchDescription``: one
+    launch argument per field (``stock.py``). So a stock file can include a typed
+    one, and ``ros2 launch`` can run it.
+    """
+
+    def generate_launch_description():
+        from .stock import description
+
+        return description(target)
+
+    generate_launch_description.typed_target = target
+    return generate_launch_description
+
+
+def _entry_point(target: TypedTarget, kind: str) -> Callable:
+    """The ``generate_launch_description`` tlaunch finds a script through.
+
+    A script drives a session and has no launch description; stock launch finds
+    the name and is told why, rather than reporting an empty launch file.
     """
 
     def generate_launch_description():
@@ -75,7 +92,7 @@ def launch(*, config: type):
 
     def decorator(factory: Callable) -> TypedLaunch:
         typed = TypedLaunch(config_type=config, factory=factory)
-        typed.generate_launch_description = _entry_point(typed, "launch")
+        typed.generate_launch_description = _stock_entry_point(typed)
         return typed
 
     return decorator

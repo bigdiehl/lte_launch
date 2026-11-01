@@ -9,6 +9,7 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend>ament_cmake_python</build_depend>
+  <build_depend>ros2_typed_launch</build_depend>
 
   <exec_depend>ros2_typed_launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

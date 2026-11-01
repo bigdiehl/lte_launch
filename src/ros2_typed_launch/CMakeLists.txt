@@ -30,4 +30,6 @@ if(BUILD_TESTING)
   ament_add_pytest_test(ros2_typed_launch_test test)
 endif()
 
-ament_package()
+# ros2_typed_launch_install_stubs(): for packages whose typed launches stock
+# launch should find (see cmake/ros2_typed_launch-extras.cmake).
+ament_package(CONFIG_EXTRAS cmake/ros2_typed_launch-extras.cmake)

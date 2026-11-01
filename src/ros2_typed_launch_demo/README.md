@@ -25,6 +25,7 @@ no display, `export QT_QPA_PLATFORM=offscreen` first.
 | `turtle_showcase_launch.py` | stock launch constructs (namespaces, params, timers, events) driven by typed config |
 | `turtle_params_launch.py` | the two ways a node gets ROS parameters: typed `RosParams`, and untyped config sections |
 | `stock_include_launch.py` | including a **traditional** (untyped) `.launch.py` file |
+| `stock_launch/stock_parent.launch.xml` | the other way: a **stock** launch file including a typed one |
 | `turtle_bringup_script.py` | **imperative** launching: start, wait, check, restart, stop, in order |
 | `flaky_demo_launch.py` | what happens when a process dies: the error, the summary, the exit code |
 | `tmux_demo_launch.py` | `--tmux`: a pane per process, windows to group an include, `--tmux-dash` dashboard (or `./run.sh`) |
@@ -116,6 +117,19 @@ installed to `share/`. Typed config is converted to plain `name:=value` launch a
 ```bash
 tlaunch ros2_typed_launch_demo stock_include_launch.py --namespace t1 --background_r 120
 ros2 launch ros2_typed_launch_demo spawn_turtle.launch.py namespace:=t1   # the stock file alone
+```
+
+### stock_parent.launch.xml — stock including a typed launch
+
+`CMakeLists.txt` installs a stub per typed launch into `share/` (`ros2_typed_launch_install_stubs`),
+so stock launch finds them. Each field is a launch argument; `tlaunch_config` takes config files
+(`;`-separated). Layering, validation and node sections work as under `tlaunch`; monitoring and
+`--tmux` do not.
+
+```bash
+ros2 launch ros2_typed_launch_demo stock_parent.launch.xml
+ros2 launch ros2_typed_launch_demo turtle_demo_launch.py -s          # the arguments
+ros2 launch ros2_typed_launch_demo turtle_demo_launch.py turtlesim.namespace:=a teleop.enabled:=false
 ```
 
 ### turtle_bringup_script.py — imperative launching

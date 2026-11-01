@@ -42,8 +42,8 @@ Eventually I'd like to incorporate some sort of node/launch manager. Framed as a
 4. Interface with traditional ROS2 launch
     - [DONE] Can include standard launch files. Convert args to supported format
       -- actions.stock_args + stock_include_launch.py; see design-notes.md Q17
-    - Standard launches can include us? Might be harder
-      -- still open, and still looks not worth it: typed files reject stock `ros2 launch`
+    - [DONE] Standard launches can include us
+      -- stock.py + ros2_typed_launch_install_stubs (CMake); see design-notes.md Q17
 
 Other
     - [DONE] Method for loading params/remaps from config file

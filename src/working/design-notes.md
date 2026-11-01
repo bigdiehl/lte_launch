@@ -111,7 +111,7 @@ Closed, no work needed: an import cycle between launch files is already a clear 
 `ImportError`, caught and wrapped by `loader.py`; no cycle-detection code needed (verified,
 `test_loader.py`).
 
-### Interop with stock launch files (Q17) — PARTLY
+### Interop with stock launch files (Q17) — DONE (both directions)
 
 **Built:** typed → stock, the common case (a typed launch includes a third-party package's
 plain launch file). `actions.stock_arg`/`stock_args` convert typed config values to the flat
@@ -126,10 +126,35 @@ file, installed to `share/` like any stock package would, found via
 sees it). Verified with a real launch: typed config → `stock_args` → stock
 `LaunchConfiguration` → node parameter, end to end.
 
-Still open: stock (a stock launch including one of ours, or a stock file being run under
-`tlaunch`) — not possible today; typed files reject stock `ros2 launch` outright, and nothing
-generates stock `DeclareLaunchArgument`s from a schema. Leaning: accept the boundary; revisit
-only if a concrete need for calling into a typed launch from an existing stock tree comes up.
+**Stock → typed: built 2026-10-11** (`stock.py`). Without it a typed launch could only sit
+at the top of a launch tree.
+
+How: a typed launch's `generate_launch_description()` returns a real `LaunchDescription` —
+one `DeclareLaunchArgument` per field with a flag (dotted name; schema default, none if
+required so stock reports it; description + constraints), plus `tlaunch_config`
+(`;`-separated config files), plus an `OpaqueFunction` that runs `cli.configure` (layering,
+validation, `$(var)`) and `cli.build_actions`. tlaunch itself reads `.typed_target` and never
+calls it. Scripts still raise "run it with tlaunch".
+
+Finding the file: stock includes by path; ours live in the Python package and break their
+relative imports when loaded by path. `ros2_typed_launch_install_stubs(<py pkg> <module>...)`
+(CMake, `cmake/ros2_typed_launch-extras.cmake`) installs a one-line stub per module into
+`share/<pkg>/launch/` that imports it by package path. So `ros2 launch <pkg> <module>.py` and
+`$(find-pkg-share pkg)/launch/<module>.py` both work.
+
+| Question | Answer |
+|---|---|
+| Python and XML parents, `ros2 launch` direct | Work; verified with turtlesim (`stock_parent.launch.xml`) |
+| Layering | defaults < `tlaunch_config` files < arguments. "Given" = set before our declarations run (a snapshot `OpaqueFunction` first), so a declared default never beats a file |
+| Types | Arguments are text: scalars/bools go to the schema as text (as flags do); lists/dicts are YAML |
+| Errors | tlaunch's own lines, named by argument, under stock's "Caught exception in launch" |
+| Typos | Stock ignores undeclared arguments. One under a group of ours (`turtlesim.nmespace`) is reported with a suggestion |
+| Node sections, `RosParams`, `$(var)` remaps | Same as tlaunch (verified: `turtle_params_launch.py` with a config file) |
+
+Limits: stock passes a parent's launch configurations down unscoped, so a parent argument
+named like one of our fields feeds it silently (wrap the include in a `<group>`). tlaunch's own
+options do not apply (monitoring/exit code, `--tmux*`, `--show-config`, saved effective
+config). `@script` targets cannot be included.
 
 ### Launch-time values (Q19) — PROPOSED, revisited by Q25
 

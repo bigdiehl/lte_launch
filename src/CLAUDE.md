@@ -137,8 +137,10 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   also **include a traditional (untyped) stock launch file** via stock
   `IncludeLaunchDescription`; `actions.stock_args({name: config.x, ...})` converts typed
   config values to the flat strings stock launch args are always made of (bool ->
-  `"true"`/`"false"`, everything else `str()`'d). One-way only — see `stock_include_launch.py`
-  and design-notes.md, Q17.
+  `"true"`/`"false"`, everything else `str()`'d). The other way works too (`stock.py`):
+  a typed launch's `generate_launch_description()` returns a stock `LaunchDescription`, one
+  argument per field plus `tlaunch_config`; `ros2_typed_launch_install_stubs(...)` in CMake puts
+  a stub in `share/<pkg>/launch/` so stock can find it. Design-notes Q17.
 - **Pydantic 1** (system, apt/rosdep `python3-pydantic`), not 2 — launch authors import
   Pydantic directly in their own files, so a system install matters more than v2's
   stricter API. Both `package.xml`s declare `<exec_depend>python3-pydantic</exec_depend>`.
