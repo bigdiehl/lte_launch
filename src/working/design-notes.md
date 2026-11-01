@@ -46,7 +46,8 @@ Status tags on open questions: **OPEN** (needs a decision) · **PARTLY** (part b
 | Node-defined schemas | **Optional**: when a node ships a schema, `tlaunch -h` shows its parameters; when it doesn't, the untyped lane carries them. MoveIt's `generate_parameter_library` spec is *not installed* by its CMake macro, so discovery needs our own resource — Q24 |
 | Process monitoring | Every run records the processes it starts and **reports what died**: an error line naming the node, an end-of-run summary, and a **non-zero exit code** (launch itself returns 0 for a run whose node died). `/diagnostics` publishing is opt-in via `--diagnostics`, since it needs an rclpy node in the launch. Direct children only. Built — Q27 |
 | Imperative launching | `@script(config=...)` + a `Session`: the service owns the main thread, the script runs on a worker. `session.start()` returns a **stage handle** you drill into (`stage["planner"]`); Ctrl-C makes the current wait raise so the script's `finally` runs; the session always stops what it started; runnable as `tlaunch <pkg> <file>` **and** `python3 <file>`. Built — Q26 |
-| tmux | Deferred — see `#deferred-designs` below |
+| tmux panes | `--tmux` runs each process in its own pane; `--tmux-only GLOB` picks some. **Launch keeps owning the process**: it runs `tlaunch-pane`, which runs the real command in a pane and ends exactly as it did, so pids, signals and exit codes are unchanged. Grouping (e.g. an include into one window) is by environment variable, via `window(name, actions)`. A pane gives a **real TTY**, which stock launch cannot. The pane's output is copied back to the shim's stdout (`lte-run --tee`), so launch's log files, the death report and `wait_output()` still see it; only the terminal echo is dropped (the pane is where it is read). Built — Q28 |
+| tmux dashboard | `--tmux-dash` opens libtmux_easy's `lte-dash` over the run: home = the run's own output, sidebar status from pane options, stop/shutdown through launch. `--tmux-logs` adds a `/rosout` viewer window, toggled with `prefix v`. Keys are borrowed for the run (`lte-key`), never put in `~/.tmux.conf`. Built — Q29 |
 | License | Not a concern for now |
 
 ## Open questions
@@ -514,9 +515,184 @@ Still open: composable nodes (no pid — probably needs the container's own node
 `required=True` notion per node (ROS 1's `required`, ROS 2's `on_exit=Shutdown()`); whether
 `--diagnostics` should also publish a single aggregate status for the launch as a whole.
 
-### tmux (T) — DEFERRED
+### Processes in tmux panes (Q28) — BUILT (2026-10-02)
 
-`~/projects/libtmux_easy` reviewed. Design sketch: `#deferred-designs` below.
+Wanted: a launch merges every process's output into one pane, so reading one node means
+grepping. Optionally split any or all launched elements — a node, an included launch — into
+tmux panes.
+
+Of the fork recorded in `#deferred-designs` (tmux owns the process vs. launch owns it with a
+per-pane shim), **(ii) was built**: launch still owns every process. The deciding argument is
+Q27's — a run whose node dies has to say so, and a process tmux owns has no exit code launch
+can see, so (i) would have given back the very thing Q27 just fixed.
+
+**Decisions**
+
+* **opt-in per run and per process.** `--tmux`, `--tmux-only GLOB` (repeatable; matched
+  against the process name, that name without launch's `-N` counter, and the node's FQN),
+  `--tmux-session NAME`. A pane is a window-manager decision, so launch *files* say nothing
+  about it — one exception, grouping, below.
+* **`tlaunch-pane`, a stand-in process.** Launch runs it in place of the real command; it
+  splits a pane, runs the command there and then ends the same way the command did (re-raising
+  a signal rather than reporting 128+N), so launch records the true returncode. Stdlib only —
+  one runs per launched process.
+* **inside the pane, the command runs under libtmux_easy's `lte-run`** (revised 2026-10-10;
+  was a `sh -c "cmd; rc=$?; printf $rc > file"` line). `lte-run` is the command's real parent:
+  `waitpid` gives the exact code or signal, sent to the shim over a unix socket (`LTE_DIR`,
+  passed with `-e`); signals go back the same way as `{"cmd": "signal"}`. No tmux polling, no
+  status file, no 128+N guessing. A hard dependency: `uv tool install --editable
+  ~/projects/libtmux_easy` puts `lte-run` on `PATH`; `--tmux` refuses to start without it.
+  Improvements found here are fed back to libtmux_easy rather than worked around.
+* **hooked at `Executable.prepare`,** where launch turns an action's substitutions into the
+  argv it will run. One seam covers nodes, plain `ExecuteProcess`, and anything inside an
+  *included* launch file, typed or stock — there is no launch description to walk for a
+  process launch creates from a timer, a condition or an include.
+* **grouping by environment variable** (`TLAUNCH_TMUX_WINDOW`), set by
+  `window(name, actions)` — a scoped `GroupAction` + `SetEnvironmentVariable`. Processes
+  carrying the same value share a window, however deep they were started, which is what makes
+  "an included launch in its own window" work with no new API. Without `--tmux` it does
+  nothing at all. (Same trick as the session's stage markers in Q26.)
+* **nothing is ever killed to make room.** An existing session is joined (so running inside
+  tmux puts the windows where the user already is), window names are made unique, and only
+  panes whose process has finished are closed.
+* **the session is tidied up unless something failed.** A session of our own that nobody is
+  attached to and nothing failed in is closed at the end of the run — otherwise one piles up
+  per run. If a pane's process failed, its pane *is* the last of that output, so it stays, and
+  tlaunch says how to reach it.
+* **a pane is a convenience, never a dependency.** If no pane can be had (no room, no window,
+  no tmux), the shim `exec`s the real command instead, so the process still runs with the
+  shim's pid and its output back in launch's log.
+
+**Evidence**
+
+| Question | Answer |
+|---|---|
+| Does launch still see the real exit code? | Yes — `exit 0/7/137` → 0/7/137 (137 is no longer mistaken for SIGKILL), `kill -15` → `-15`, SIGSEGV → `-11`. `flaky_demo_launch.py --tmux` reports `exit code 3` and exits 1, same as without `--tmux` |
+| Does a node that catches the shutdown signal report its own code? | Only since `lte-run`. With a shell in the pane, the forwarded `killpg` hit the shell too: a node trapping SIGTERM and exiting 3 was reported as killed by SIGTERM (4/4). Now 3 (and a test pins it). A command ignoring signals is sent SIGKILL by the shim after 8 s — before launch's own SIGKILL, which would land on the shim and orphan the command |
+| Is a pane killed by hand a failure? | Yes: `lte-run` gets SIGHUP and passes it on, so the shim dies by SIGHUP. If `lte-run` never reports, the shim also dies by SIGHUP |
+| Does a pane give a real terminal? | Yes — `tty` in a pane answers `/dev/pts/N`, `[ -t 0 ]` passes. **`turtle_teleop_key` works**, where under plain launch it dies with "Failed to get old console mode" |
+| Does the pane's process get launch's environment? | Only if passed explicitly. The tmux **server** forks a pane's process, so it uses the *server's* environment — which in a joined session predates the workspace being sourced. `split-window -e K=V` per variable fixes it (66 variables in a typical run); verified `ROS_DISTRO` and `TLAUNCH_TMUX_WINDOW` in `/proc/<pane pid>/environ` |
+| Is `#{pane_dead_status}` trustworthy? | **No.** With `respawn-pane` it was empty roughly 1 run in 8 (tmux 3.4); a SIGKILLed pane read `1` instead of the signal. So nothing reads it for the exit code (that comes from `lte-run`), and the shim records the status as the pane option `@tlaunch_status` for the end-of-run tidy-up — `stopped` if it was asked to stop, so a Ctrl-C does not keep the session as "failed" |
+| How is "killed by signal N" passed on? | The shim **re-raises the signal on itself**, so launch records `-15`/`-9` exactly as if it had started the command |
+| Does a dead pane survive to be read? | Yes, with `remain-on-exit on` — set on the **window** before anything is split, since setting it per pane afterwards is a race a fast-failing process wins |
+| Do dead panes pile up? | Yes, until "no space for new pane". Finished panes are closed before a new split, and the layout is re-tiled each time (without re-tiling a window fits only ~6) |
+| Is `libtmux_easy` used? | **Its `lte-run` wrapper, yes** (since 2026-10-10). `TmuxSession` still no: each process needs its own stand-in process, which cannot share a `TmuxSession` object; its shell pane mode types commands into bash and so loses launch's environment; and importing `libtmux`/`psutil` per stand-in costs startup. `wrap.py` is stdlib-only, so none of that applies to it |
+| What does `lte-run` cost per pane? | 0.02 s and 12.5 MB, after a fix fed back to libtmux_easy: its console script imported the whole package (`libtmux`, `psutil`) through `__init__`, 0.09 s and 19.8 MB. `__init__` now loads its names lazily |
+
+**Gotchas found**
+
+* `tmux display-message -p -t %999` for a pane that does not exist **succeeds** and prints an
+  empty format. Waiting for an error is an endless wait — a missing pane is recognised by the
+  empty answer.
+* a shell between launch's signal and the command takes the signal too (`killpg` reaches the
+  whole pane group). Superseded by `lte-run`, which signals the target and its descendants only.
+* the shim's tmux error message once printed the whole `split-window` argv — every `-e NAME=VALUE`,
+  tokens included — into launch's log. It now names only the subcommand.
+* `signal.signal(SIGKILL, SIG_DFL)` raises `OSError` — so re-raising SIGKILL on yourself has to
+  skip the reset and go straight to `os.kill`.
+* a window cannot be created without a pane, and that pane runs a shell no process will use.
+  It cannot be closed from tlaunch either, because a window with no panes is gone — so the
+  first process into a window is told to retire it (`--retire`) once its own pane exists.
+
+**Output back to launch (2026-10-11, reworked 2026-10-15).** A process in a pane writes to the
+pane, which used to cut it off from launch's log files, the death report's last lines and
+`Process.wait_output()`. Now the shim relays it:
+
+* the pane runs `lte-run --tee <scratch>/out -- command`. lte-run attaches the copy (tmux
+  `pipe-pane`, escapes stripped) before it starts the command, and has written the last of it
+  before it reports the exit. The shim reads the FIFO and writes each line to its own stdout,
+  which is where launch reads a process's output. stdout and stderr arrive merged, as stdout.
+* first version (2026-10-11) did this in the shim: its own `pipe-pane`, a FIFO gate before
+  `exec`, and a quiet-based drain because tmux refuses `pipe-pane` on an exited pane, so the
+  copy never reaches EOF. Moved into libtmux_easy (`33f57da`), where `wait_for_output()` needed
+  the same thing.
+* the shim opens the FIFO (and holds a write end) before the pane exists: lte-run refuses a
+  FIFO with no reader, and a FIFO with no writer reads as EOF.
+* **the screen**: `tmux.off_screen` drops `screen` from the action's `output` before launch
+  builds its loggers (`execute()` calls `prepare()` first), keeping `log`/`own_log`. The pane
+  is where the output is read; echoing it in the terminal would undo the point of panes.
+
+Verified 2026-11-01 against libtmux_easy `d37e15a`: `turtle_bringup_script.py --tmux` (its
+`wait_output("publishing")` targets a process in a pane) runs to the end; the flaky demo's
+paned output is in `launch.log`, its failed pane kept; dashboard `x`, `r` (refused), `Q`.
+
+**Dashboard: a pane on show (2026-11-01).** `remain-on-exit` was a window option only. Showing a
+pane swaps it into the dashboard's window, which lacks it, so a process that ended while on
+show closed its pane and the sidebar said "gone closed". tlaunch-pane now sets it on the pane
+too (pane options travel with the pane).
+
+**Open**
+
+* expanding an *included* `tlaunch` launch's own `--tmux` settings (nested tlaunch) — not
+  attempted.
+* `--tmux-attach`, to attach from tlaunch itself rather than printing the command.
+
+### Dashboard and log window (Q29) — BUILT (2026-10-10)
+
+Wanted: plug a run into libtmux_easy's dashboard, with launch's output (and every process not
+in a pane) on its home page; optionally a window running ros2-term's `log_app.py`, with a key
+to switch to it and back.
+
+**Decisions**
+
+* **libtmux_easy opens the window, tlaunch feeds it.** `TmuxSession.dashboard()` cannot be
+  used (launch owns the processes), so libtmux_easy gained `dash.open_window()` and
+  `lte-dash --open SESSION --status F --ctl C --home-log L`, stdlib-only, which
+  `TmuxSession.dashboard()` now uses too. tlaunch needs only `lte-dash` on `PATH`, as with
+  `lte-run`.
+* **status from pane options.** Each `tlaunch-pane` records `@tlaunch_name/window/command/shim/
+  target/status/stopped` on its pane; one `list-panes -s` per 0.5 s becomes lte-dash's status
+  file (PaneStatus shape, `mode: "tlaunch"`). `window` is recorded because a pane on show sits
+  in the dashboard's window.
+* **commands go through launch.** `x` = `ShutdownProcess` for the action whose pid is the
+  pane's stand-in, after `monitor.note_stop`, so it is a stop and not a death. `X` the same for
+  every pane; `Q` = launch `Shutdown`, i.e. a Ctrl-C. `r` is refused (launch will not execute an
+  action twice). `LaunchService.emit_event` is thread-safe, so the socket thread calls it
+  directly; `tm.attach_run(service, monitor)` from `run_launch`/`run_session` hands it over.
+* **home = fd 1 and 2, teed.** At the descriptor (`os.pipe` + `dup2`), not `sys.stdout`:
+  launch's handlers hold their own stream reference. The terminal still gets everything.
+* **stopped is not failed.** `@tlaunch_stopped` (last forwarded signal) replaced the
+  `status=stopped` marker, so the real exit code survives for the sidebar *and* a stopped pane
+  does not keep the session.
+* **log window**: `--tmux-logs` runs `ros2-log-view` (`TLAUNCH_LOG_VIEWER` overrides) with
+  launch's environment, and sets session option `@tlaunch_logs`.
+* **keys are borrowed, not configured** (revised 2026-10-10; was a `~/.tmux.conf` block). A
+  binding is server-global, so libtmux_easy's `lte-key borrow KEY OPTION -- CMD` wraps the key:
+  `if-shell -F '#{OPTION}' { CMD } { <the key's previous binding> }`. Outside our sessions the
+  key does what it always did; the original is saved in global options and restored by the last
+  `lte-key return`, with a count so two runs can share a key. tlaunch borrows `v`
+  (`@tlaunch_logs`: select it, or `last-window` if already there); the lte-dash sidebar borrows
+  `g` itself and returns it in a `finally` (SIGHUP from kill-window/kill-session included).
+  `TLAUNCH_LOGS_KEY`/`TLAUNCH_DASH_KEY` pick other keys, empty = none.
+
+**Evidence** (tmux 3.4, Textual 8.2.8)
+
+| Question | Answer |
+|---|---|
+| Sidebar lists the run? | Yes, grouped by window; `j` swaps the pane into the viewport |
+| `x` on teleop | `sending signal 'SIGINT'`, `finished cleanly`, no death report; entry `exit 0, stopped SIGINT` |
+| `Q` `Q` | `shutdown requested from the dashboard`, run exits 0, session closed, temp dir gone |
+| Inside tmux | dashboard opens in the user's session and is selected; at the end only our windows close and the `@lte_dash_*`/`@tlaunch_logs` options are unset |
+| A failure | session, dashboard, status file and home log kept; sidebar shows keeper stopped / oneshot exit 0 / flaky exit 3 |
+| `prefix v` | dash -> logs -> dash, via a pty client |
+| Borrowed keys | user's own `v` saved and wrapped; in another session `prefix v` ran it (renamed the window). Two runs at once: counts 2 -> 1 -> restored; `g` unbound again, no globals left |
+| Non-pane output in home | yes (`--tmux-only 'turtle*'`: chatter's ticks in `home.log`) |
+
+**Gotchas found**
+
+* tmux 3.4 `set-option -t =name` says "no such session" (`has-session -t =name` is fine).
+* `tmux()` strips stdout, eating the empty fields that end the last `-F` row: teleop, listed
+  last, silently vanished from the status file. `tmux.pane_rows` pads; the status file and the
+  end-of-run failure count both read through it.
+* The installed ros2-term (0.1.3, from the index) has no `log_app`; `ros2-log-view` needs the
+  local checkout installed (`pipx install --force --editable ~/projects/ros2-term`). `./run.sh`
+  instead sets `TLAUNCH_LOG_VIEWER` to run the checkout with the pipx venv's Python.
+
+**Open**
+
+* rerun from the sidebar for session scripts (a stage *can* restart; a launch action cannot).
+* non-pane processes are not listed in the sidebar (their output is in home).
+* `--tmux-attach`, to attach from tlaunch rather than printing the command.
 
 ### Packaging and invocation (Q12) — PARTLY
 
@@ -656,7 +832,8 @@ enumerate the surface is worth having (now: list the nodes a launch builds, with
 that matched each). Dropped with it: `prefix:` per node id (`--launch-prefix[-filter]` already
 covers the debugging case).
 
-**tmux.** `~/projects/libtmux_easy` (~600 lines over `libtmux`) is a stateful, in-process
+**tmux.** Superseded — built as Q28 above; option (ii) was chosen. Kept for the reasoning.
+`~/projects/libtmux_easy` (~600 lines over `libtmux`) is a stateful, in-process
 session/window/pane builder (`TmuxSession.create(name)`, `new_pane(name, cmd)`, `send_keys`).
 It types commands into pane shells, so tmux — not launch — would own the processes, meaning
 launch loses exit codes/events for anything routed through a pane. `TmuxSession.create()`

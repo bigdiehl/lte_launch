@@ -31,6 +31,29 @@ def include(child: TypedLaunch, config: Any):
     return GroupAction(actions=child.build(config))
 
 
+def window(name: str, actions: list):
+    """Group `actions` into one tmux window, when a run uses ``--tmux``.
+
+    Without ``--tmux`` this changes nothing at all: it only sets an environment
+    variable, which the pane machinery reads to decide which window a process
+    belongs in (see tmux.py). That is why it works around an *include* -- the
+    variable is inherited by every process the included launch starts, however
+    deep, including a stock launch file's.
+
+        window("teleop", [include(turtle_teleop, TeleopConfig())])
+
+    The group is scoped, so the variable does not leak to anything after it.
+    """
+    from launch.actions import GroupAction, SetEnvironmentVariable
+
+    from .tmux import WINDOW_ENV
+
+    return GroupAction(
+        scoped=True,
+        actions=[SetEnvironmentVariable(WINDOW_ENV, name), *actions],
+    )
+
+
 def fqn_of(name: str | None, namespace: str | None) -> str | None:
     """A node's fully-qualified name, as the node patterns match against it.
 

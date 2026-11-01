@@ -15,6 +15,11 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS scripts/tlaunch DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/tlaunch DESTINATION bin)
 
+# tlaunch-pane: the stand-in launch runs when a process goes in a tmux pane
+# (see tmux.py). On PATH for the same reason, because tmux.py looks it up there.
+install(PROGRAMS scripts/tlaunch-pane DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS scripts/tlaunch-pane DESTINATION bin)
+
 # Registers tab completion the moment install/setup.bash is sourced -- no
 # manual `eval "$(register-python-argcomplete tlaunch)"` needed. Must come
 # before ament_package().

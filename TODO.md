@@ -17,13 +17,26 @@ In general, supporting some checks would be nice.
     - Still missing: these are only available inside a script, not as checks a
       plain launch declares.
 
-3. Tmux incorporation?
-    - Optionally launch all processes in different tmux panes? For debugging?
-    - Support tmux layout? 
+3. [DONE] Tmux incorporation.
+    - [DONE] Optionally launch all processes in different tmux panes? For debugging?
+      -- --tmux (all) / --tmux-only GLOB (some); window(name, actions) groups them,
+         e.g. an include into its own window. Launch still owns every process, so
+         exit codes and the death report are unchanged, and a pane is a real TTY
+         (turtle_teleop_key works). See design-notes Q28, tmux_demo_launch.py.
+    - [DONE] Support tmux layout?
+      -- tiled, re-applied as panes appear; --tmux-session NAME to pick the session.
+    - [DONE] A process in a pane still reaches launch's log, the death report and
+      Process.wait_output() (lte-run --tee; Q28).
+    - Still missing: nested tlaunch includes are not expanded.
 
 Eventually I'd like to incorporate some sort of node/launch manager. Framed as a tmux session to manage each launch/node
-    - Similar to https://gitlab.iiia.csic.es/socialminds/tools/launch_tui
-    - Should make tmux optional. Not everyone likes that. 
+    - [DONE] Similar to https://gitlab.iiia.csic.es/socialminds/tools/launch_tui
+      -- --tmux-dash (libtmux_easy's lte-dash: per-pane status, stop, Q, home =
+         this run's output) and --tmux-logs (ros2-log-view window, prefix v).
+         See design-notes Q29, ./run.sh. Rerun is refused: launch will not
+         execute an action twice.
+    - [DONE] Should make tmux optional. Not everyone likes that.
+      -- every tmux flag is opt-in; without them a run is plain launch.
 
 
 4. Interface with traditional ROS2 launch

@@ -30,12 +30,15 @@ record without a lock cannot see a half-filled one.
 
 from __future__ import annotations
 
+import os
 import socket
 import sys
 import threading
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+from .tmux import PANE_SCRIPT
 
 #: Lines kept per process, so a late reader can still match output that went by.
 OUTPUT_LINES = 2000
@@ -106,12 +109,32 @@ def node_name_of(action) -> str | None:
 
     ``Node.node_name`` resolves namespace and remappings and raises before the
     action has run, so this is only called from a process event.
+
+    A node started without a `name` has no name to resolve -- rcl lets the
+    executable pick its own at startup -- and launch says so with a placeholder
+    (``/<node_name_unspecified>``). That is worse than useless in a label, so
+    it counts as no name at all and the process name is used instead.
     """
     try:
         name = action.node_name
     except Exception:
         return None
-    return name if isinstance(name, str) and not name.startswith("<") else None
+    if not isinstance(name, str) or "<" in name:
+        return None
+    return name
+
+
+def real_cmd(cmd) -> list[str]:
+    """The command as it was written, with any tmux stand-in taken off.
+
+    A process in a tmux pane is started through `tlaunch-pane` (see tmux.py),
+    so that is what launch's events carry. Reports are about the node, not
+    about how its output got onto the screen, so the wrapper is dropped here.
+    """
+    cmd = list(cmd)
+    if cmd and os.path.basename(cmd[0]) == PANE_SCRIPT and "--" in cmd:
+        return cmd[cmd.index("--") + 1:]
+    return cmd
 
 
 class Monitor:
@@ -178,7 +201,7 @@ class Monitor:
         info.process_name = event.process_name
         info.node_name = node_name_of(event.action)
         info.pid = event.pid
-        info.cmd = list(event.cmd or [])
+        info.cmd = real_cmd(event.cmd or [])
         info.env = getattr(event, "env", None)
         info.started = True                      # announce last
         self._changed(info)

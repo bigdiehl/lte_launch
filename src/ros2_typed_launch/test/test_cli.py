@@ -45,7 +45,7 @@ def show(launch_file, extra, capsys):
 
 
 # ------------------------------------------------------------------ targets
-def test_split_target(sample_launch):
+def test_split_target_and_completion(sample_launch, fake_package, monkeypatch):
     assert cli.split_target([sample_launch, "--map", "m.yaml"]) == (
         [sample_launch], ["--map", "m.yaml"],
     )
@@ -61,9 +61,6 @@ def test_split_target(sample_launch):
         ["pkg"], ["--x", "1", "x_launch"],
     )
 
-
-# --------------------------------------------------------------- completion
-def test_complete_launch_file(fake_package):
     # Completions are full filenames (".py" included), matching what tlaunch
     # now requires you to type.
     parsed_args = argparse.Namespace(package=fake_package)
@@ -71,8 +68,6 @@ def test_complete_launch_file(fake_package):
         "child_launch.py", "main_launch.py", "nested_launch.py", "not_a_launch.py",
     }
 
-
-def test_complete_package_or_path(monkeypatch):
     pytest.importorskip("ament_index_python")
     import ament_index_python.packages as amt
 
@@ -80,31 +75,26 @@ def test_complete_package_or_path(monkeypatch):
     assert "my_pkg" in cli._complete_package_or_path("", argparse.Namespace())
 
 
-def test_no_arguments_prints_help(capsys):
+# --------------------------------------------------------------- completion
+def test_resolving_the_target(capsys, tmp_path, fake_package):
     code, out, _ = run([], capsys)
     assert code == 0 and "usage: tlaunch" in out
 
-
-def test_untyped_launch_file_is_rejected(tmp_path, capsys):
     path = tmp_path / "plain_launch.py"
     path.write_text("def generate_launch_description():\n    return None\n")
     code, _, err = run([str(path), "--show-config"], capsys)
     assert code == 2 and "not a typed launch file" in err
 
-
-def test_unknown_package_is_a_clean_error(capsys):
     code, _, err = run(["definitely_not_a_package", "x_launch"], capsys)
     assert code == 2 and "tlaunch: error:" in err
 
-
-def test_resolves_by_package_and_module(fake_package, capsys):
     code, out, err = run([fake_package, "main_launch.py", "--show-config"], capsys)
     assert code == 0, err
     assert "n: 5" in out
 
 
 # --------------------------------------------------------------- flags/help
-def test_help_groups_flags_by_nested_model(sample_launch, capsys):
+def test_help_and_schema(sample_launch, capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main([sample_launch, "-h"])
     assert exc.value.code == 0
@@ -118,22 +108,20 @@ def test_help_groups_flags_by_nested_model(sample_launch, capsys):
     assert "(repeatable)" in out
     assert "robots (robot)" in out.replace("\n", " ") or "robots" in out  # epilog
 
-
-def test_schema_flag_prints_json_schema(sample_launch, capsys):
     code, out, _ = run([sample_launch, "--schema"], capsys)
     assert code == 0 and "map" in json.loads(out)["properties"]
 
 
 # ---------------------------------------------------------------- layering
-def test_defaults_and_outer_default_instance(sample_launch, capsys):
+def test_layering_defaults_files_then_cli(
+    sample_launch, capsys, write, tmp_path, monkeypatch
+):
     values, sources = show(sample_launch, ["--map", "m"], capsys)
     assert values["planner.tolerance"] == 0.9          # Planner(tolerance=0.9)
     assert values["planner.algorithm"] == "smac"
     assert sources["planner.tolerance"] == "default"
     assert sources["map"] == "cli"
 
-
-def test_later_config_files_override_earlier_ones(sample_launch, write, capsys):
     a = write("a.yaml", "map: from_a\nrobot: {name: alice, use_sim_time: true}\n")
     b = write("b.yaml", "robot: {name: bob}\n")
     values, sources = show(sample_launch, ["--config", a, "--config", b], capsys)
@@ -142,24 +130,18 @@ def test_later_config_files_override_earlier_ones(sample_launch, write, capsys):
     assert sources["robot.use_sim_time"] == a
     assert values["map"] == "from_a"
 
-
-def test_cli_overrides_every_file(sample_launch, write, capsys):
     a = write("a.yaml", "map: m\nplanner: {tolerance: 0.1}\n")
     values, sources = show(
         sample_launch, ["--config", a, "--planner.tolerance", "0.7"], capsys
     )
     assert values["planner.tolerance"] == 0.7 and sources["planner.tolerance"] == "cli"
 
-
-def test_bool_flag_pair(sample_launch, write, capsys):
     a = write("a.yaml", "map: m\nrobot: {use_sim_time: true}\n")
     values, _ = show(sample_launch, ["--config", a, "--no-robot.use_sim_time"], capsys)
     assert values["robot.use_sim_time"] is False
     values, _ = show(sample_launch, ["--map", "m", "--robot.use_sim_time"], capsys)
     assert values["robot.use_sim_time"] is True
 
-
-def test_package_relative_config_reference(sample_launch, tmp_path, monkeypatch, capsys):
     from ros2_typed_launch import config
 
     share = tmp_path / "share"
@@ -172,7 +154,7 @@ def test_package_relative_config_reference(sample_launch, tmp_path, monkeypatch,
 
 
 # -------------------------------------------------------------- collections
-def test_list_flag_repeats_and_replaces_file_lists(sample_launch, write, capsys):
+def test_collection_flags(sample_launch, write, capsys):
     a = write("a.yaml", "map: m\ntags: [a, b]\n")
     b = write("b.yaml", "tags: [c]\n")
     values, _ = show(sample_launch, ["--config", a, "--config", b], capsys)
@@ -182,8 +164,6 @@ def test_list_flag_repeats_and_replaces_file_lists(sample_launch, write, capsys)
     )
     assert values["tags"] == ["x", "y"]                # CLI replaces files
 
-
-def test_dict_flag_merges_per_key_with_files(sample_launch, write, capsys):
     a = write("a.yaml", "map: m\nparams: {p: 1, q: 2}\nremap: {/a: /b}\n")
     values, _ = show(
         sample_launch,
@@ -193,22 +173,14 @@ def test_dict_flag_merges_per_key_with_files(sample_launch, write, capsys):
     assert values["params"] == {"p": 1, "q": 3, "r": True}  # untyped -> YAML inference
     assert values["remap"] == {"/a": "/b", "/c": "/d"}      # typed str stays a string
 
-
-def test_dict_value_is_split_on_first_equals(sample_launch, capsys):
     values, _ = show(sample_launch, ["--map", "m", "--remap", "/a=/b=c"], capsys)
     assert values["remap"] == {"/a": "/b=c"}
 
-
-def test_dict_flag_requires_key_value(sample_launch, capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main([sample_launch, "--map", "m", "--params", "novalue"])
     assert exc.value.code == 2
     assert "expected KEY=VALUE" in capsys.readouterr().err
 
-
-def test_collections_of_models_have_no_flag_but_load_from_yaml(
-    sample_launch, write, capsys
-):
     with pytest.raises(SystemExit):
         cli.main([sample_launch, "--map", "m", "--robots", "x"])
     capsys.readouterr()
@@ -218,14 +190,12 @@ def test_collections_of_models_have_no_flag_but_load_from_yaml(
 
 
 # ------------------------------------------------------------------- errors
-def test_missing_required_field_says_how_to_set_it(sample_launch, capsys):
+def test_bad_values_are_reported_before_anything_starts(
+    sample_launch, capsys, tmp_path
+):
     code, _, err = run([sample_launch, "--show-config"], capsys)
     assert code == 2 and "--map: required" in err and "--config" in err
 
-
-def test_invalid_values_are_reported_by_flag_before_anything_starts(
-    sample_launch, capsys
-):
     code, _, err = run(
         [sample_launch, "--map", "m", "--planner.max_iterations", "999999",
          "--planner.tolerance", "-1"],
@@ -235,25 +205,28 @@ def test_invalid_values_are_reported_by_flag_before_anything_starts(
     assert "--planner.max_iterations" in err and "(got '999999')" in err
     assert "--planner.tolerance" in err
 
-
-def test_bad_choice_is_rejected_by_argparse(sample_launch, capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main([sample_launch, "--map", "m", "--planner.algorithm", "bogus"])
     assert exc.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
 
-
-def test_unknown_flag_is_rejected(sample_launch, capsys):
     with pytest.raises(SystemExit) as exc:
         cli.main([sample_launch, "--map", "m", "--planer.tolerance", "1"])
     assert exc.value.code == 2
 
+    code, _, err = run([sample_launch, "--config", "./nope.yaml", "--show-config"], capsys)
+    assert code == 2 and "cannot read config file" in err
 
-def test_typo_in_config_file_is_an_error_with_suggestion(sample_launch, write, capsys):
-    a = write("a.yaml", "map: m\nplannr: {tolerance: 1}\n")
-    code, _, err = run([sample_launch, "--config", a, "--show-config"], capsys)
-    assert code == 2
-    assert "plannr" in err and "did you mean 'planner'" in err and a in err
+    path = tmp_path / "c_launch.py"
+    path.write_text(
+        "from pydantic import BaseModel\n"
+        "from ros2_typed_launch import launch\n"
+        "class C(BaseModel):\n    config: str = 'x'\n"
+        "@launch(config=C)\ndef c(config):\n    return []\n"
+        "generate_launch_description = c.generate_launch_description\n"
+    )
+    code, _, err = run([str(path), "--show-config"], capsys)
+    assert code == 2 and "collides with tlaunch's own option --config" in err
 
 
 def test_launch_args_is_checked_against_the_schema_but_node_sections_are_not(
@@ -283,12 +256,70 @@ def test_launch_args_is_checked_against_the_schema_but_node_sections_are_not(
         code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
         assert code == 2 and expected in err
 
+    a = write("a.yaml", "map: m\nplannr: {tolerance: 1}\n")
+    code, _, err = run([sample_launch, "--config", a, "--show-config"], capsys)
+    assert code == 2
+    assert "plannr" in err and "did you mean 'planner'" in err and a in err
 
-def test_var_in_a_node_section_reads_the_launchs_own_arguments(
-    sample_launch, write, capsys
-):
-    """The point of the two-stage expansion: node config can be written once and
-    follow whatever the launch argument ends up being, including from the CLI."""
+    path = write("c.yaml", "map: m\n", raw=True)
+    code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
+    assert code == 2 and "go under 'launch_args:'" in err
+
+    path = write("c.yaml", "map: m\ntags: ['$(var map)']\n")
+    code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
+    assert code == 2 and "cannot be built from another one" in err
+
+
+def test_substitutions_and_var(sample_launch, write, capsys, monkeypatch):
+    # Both answer "is this config for this launch?", so they are checked against
+    # the schema in the same pass and reported together, before any expansion.
+    path = write(
+        "c.yaml",
+        "launch_args: {map: m, not_a_field: 1}\n"
+        "/$(var nope)/x:\n"
+        "  ros__parameters: {a: $(var robo.name)}\n",
+        raw=True,
+    )
+    code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
+    assert code == 2
+    assert "not_a_field: unknown key" in err
+    assert "$(var nope): not an argument of this launch" in err
+    assert "$(var robo.name): not an argument of this launch" in err
+    assert "did you mean 'robot.name'" in err
+    assert "written for another launch" in err  # both kinds at once says why
+    assert "cannot expand" not in err          # nothing was expanded
+
+    code, _, err = run(
+        [sample_launch, "--map", "m", "--ros-param", "t=$(var nope)", "--show-config"],
+        capsys,
+    )
+    assert code == 2
+    assert "on the command line:" in err
+    assert "$(var nope): not an argument of this launch" in err
+
+    # Which key belongs to this launch is the more fundamental question, so it is
+    # answered first -- even when the bad substitution is in another file.
+    pytest.importorskip("launch")
+    bad_key = write("a.yaml", "map: m\nnot_a_field: 1\n")
+    bad_subst = write(
+        "b.yaml",
+        "launch_args: {map: m}\n/**:\n  ros__parameters: {x: $(var nope)}\n",
+        raw=True,
+    )
+    code, _, err = run(
+        [sample_launch, "--config", bad_subst, "--config", bad_key, "--show-config"],
+        capsys,
+    )
+    assert code == 2
+    assert "not_a_field: unknown key" in err and "cannot expand" not in err
+
+    monkeypatch.setenv("TLAUNCH_TEST_MAP", "office.yaml")
+    path = write("c.yaml", "map: maps/$(env TLAUNCH_TEST_MAP)\n")
+    values, _ = show(sample_launch, ["--config", path], capsys)
+    assert values["map"] == "maps/office.yaml"
+
+    # The point of the two-stage expansion: node config can be written once and
+    # follow whatever the launch argument ends up being, including from the CLI.
     pytest.importorskip("launch_ros")
     path = write(
         "c.yaml",
@@ -311,71 +342,8 @@ def test_var_in_a_node_section_reads_the_launchs_own_arguments(
     assert '"/buggy/driver":' in out and '"cmd": "/buggy/cmd"' in out
 
 
-def test_a_var_naming_no_launch_argument_is_reported_with_the_unknown_keys(
-    sample_launch, write, capsys
-):
-    """Both answer "is this config for this launch?", so they are checked against
-    the schema in the same pass and reported together, before any expansion."""
-    path = write(
-        "c.yaml",
-        "launch_args: {map: m, not_a_field: 1}\n"
-        "/$(var nope)/x:\n"
-        "  ros__parameters: {a: $(var robo.name)}\n",
-        raw=True,
-    )
-    code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
-    assert code == 2
-    assert "not_a_field: unknown key" in err
-    assert "$(var nope): not an argument of this launch" in err
-    assert "$(var robo.name): not an argument of this launch" in err
-    assert "did you mean 'robot.name'" in err
-    assert "written for another launch" in err  # both kinds at once says why
-    assert "cannot expand" not in err          # nothing was expanded
-
-
-def test_a_var_on_the_command_line_is_checked_too(sample_launch, capsys):
-    code, _, err = run(
-        [sample_launch, "--map", "m", "--ros-param", "t=$(var nope)", "--show-config"],
-        capsys,
-    )
-    assert code == 2
-    assert "on the command line:" in err
-    assert "$(var nope): not an argument of this launch" in err
-
-
-def test_a_launch_argument_cannot_use_var(sample_launch, write, capsys):
-    path = write("c.yaml", "map: m\ntags: ['$(var map)']\n")
-    code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
-    assert code == 2 and "cannot be built from another one" in err
-
-
-def test_a_schema_mismatch_is_reported_before_a_bad_substitution(
-    sample_launch, write, capsys
-):
-    """Which key belongs to this launch is the more fundamental question, so it is
-    answered first -- even when the bad substitution is in another file."""
-    pytest.importorskip("launch")
-    bad_key = write("a.yaml", "map: m\nnot_a_field: 1\n")
-    bad_subst = write(
-        "b.yaml",
-        "launch_args: {map: m}\n/**:\n  ros__parameters: {x: $(var nope)}\n",
-        raw=True,
-    )
-    code, _, err = run(
-        [sample_launch, "--config", bad_subst, "--config", bad_key, "--show-config"],
-        capsys,
-    )
-    assert code == 2
-    assert "not_a_field: unknown key" in err and "cannot expand" not in err
-
-
-def test_missing_config_file_is_a_clean_error(sample_launch, capsys):
-    code, _, err = run([sample_launch, "--config", "./nope.yaml", "--show-config"], capsys)
-    assert code == 2 and "cannot read config file" in err
-
-
 # ------------------------------------------------------- ros params/remaps
-def test_parse_ros_cli():
+def test_ros_params_and_remaps(sample_launch, write, capsys):
     # The pattern is optional, defaulting to every node...
     [section] = cli.parse_ros_cli(["use_sim_time=true"], "param")
     assert section.pattern == "/**" and section.params == {"use_sim_time": True}
@@ -389,10 +357,6 @@ def test_parse_ros_cli():
     with pytest.raises(cli.TlaunchError, match="expected"):
         cli.parse_ros_cli(["no_equals_sign"], "param")
 
-
-def test_ros_sections_reach_a_node_and_show_config_reports_them(
-    sample_launch, write, capsys
-):
     path = write(
         "c.yaml",
         """
@@ -415,8 +379,6 @@ def test_ros_sections_reach_a_node_and_show_config_reports_them(
     assert "-> NO MATCH" in out
     assert yaml.safe_load(out)["/**"]["ros__parameters"] == {"use_sim_time": True}
 
-
-def test_a_pattern_matching_no_node_is_quiet_unless_debug(sample_launch, capsys):
     argv = [sample_launch, "--map", "m", "--ros-param", "/nope/x:a=1", "--show-config"]
 
     # Quiet by default: it changes nothing about the launch, and config aimed at
@@ -429,8 +391,6 @@ def test_a_pattern_matching_no_node_is_quiet_unless_debug(sample_launch, capsys)
     code, _, err = run(argv + ["-d"], capsys)
     assert code == 0 and "matched no node" in err and "/nope/x" in err
 
-
-def test_strict_makes_a_no_match_pattern_an_error(sample_launch, capsys):
     code, _, err = run(
         [sample_launch, "--map", "m", "--strict", "--ros-param", "a=1", "--show-config"],
         capsys,
@@ -439,37 +399,8 @@ def test_strict_makes_a_no_match_pattern_an_error(sample_launch, capsys):
     assert "--strict" in err and "untyped node sections" in err
 
 
-def test_config_file_with_the_old_bare_root_is_a_clear_error(
-    sample_launch, write, capsys
-):
-    path = write("c.yaml", "map: m\n", raw=True)
-    code, _, err = run([sample_launch, "--config", path, "--show-config"], capsys)
-    assert code == 2 and "go under 'launch_args:'" in err
-
-
-def test_substitution_in_a_config_value(sample_launch, write, monkeypatch, capsys):
-    pytest.importorskip("launch")
-    monkeypatch.setenv("TLAUNCH_TEST_MAP", "office.yaml")
-    path = write("c.yaml", "map: maps/$(env TLAUNCH_TEST_MAP)\n")
-    values, _ = show(sample_launch, ["--config", path], capsys)
-    assert values["map"] == "maps/office.yaml"
-
-
-def test_schema_field_colliding_with_tlaunch_option(tmp_path, capsys):
-    path = tmp_path / "c_launch.py"
-    path.write_text(
-        "from pydantic import BaseModel\n"
-        "from ros2_typed_launch import launch\n"
-        "class C(BaseModel):\n    config: str = 'x'\n"
-        "@launch(config=C)\ndef c(config):\n    return []\n"
-        "generate_launch_description = c.generate_launch_description\n"
-    )
-    code, _, err = run([str(path), "--show-config"], capsys)
-    assert code == 2 and "collides with tlaunch's own option --config" in err
-
-
 # ---------------------------------------------------- effective config output
-def test_show_config_output_is_a_loadable_config_file(sample_launch, write, capsys):
+def test_effective_config(sample_launch, write, capsys, tmp_path):
     path = write(
         "c.yaml",
         """
@@ -498,16 +429,6 @@ def test_show_config_output_is_a_loadable_config_file(sample_launch, write, caps
     assert data(first)["/**"]["ros__parameters"] == {"use_sim_time": True}
     assert data(first)["/**"]["ros__remappings"] == {"/scan": "/lidar/scan"}
 
-
-def test_every_run_saves_the_effective_config(tmp_path):
-    text = "launch_args:\n  map: m\n"
-    path = cli.save_effective(text, "pkg some_launch.py")
-    assert Path(path).read_text() == text
-    # Named after the launch, so two runs of different launches don't collide.
-    assert "pkg_some_launch_py" in path and path.endswith(".yaml")
-
-
-def test_show_config_merges_sections_sharing_a_pattern(sample_launch, write, capsys):
     # A config file and a --ros-param can both target /**. Emitting two blocks
     # would mean duplicate YAML keys; they are merged, each value keeping its own
     # source, and the later one (the CLI) wins.
@@ -531,3 +452,11 @@ def test_show_config_merges_sections_sharing_a_pattern(sample_launch, write, cap
     # Provenance is per value, so the two sources are both visible.
     assert "use_sim_time: true" in out and "# cli" in out
     assert re.search(r"other: 1\s+#\s+\S+c\.yaml", out)
+
+    text = "launch_args:\n  map: m\n"
+    path = cli.save_effective(text, "pkg some_launch.py")
+    assert Path(path).read_text() == text
+    # Named after the launch, so two runs of different launches don't collide.
+    assert "pkg_some_launch_py" in path and path.endswith(".yaml")
+
+

@@ -55,15 +55,13 @@ def run(returncode, *, stop=False, shutdown=False) -> mon.ProcessInfo:
 
 
 # ------------------------------------------------------------- what is a death
-def test_only_an_unasked_for_failure_counts_as_a_death():
+def test_what_counts_as_a_death():
     assert run(3).died_unexpectedly                       # the real case
     assert run(-9).died_unexpectedly                      # killed from outside
     assert not run(0).died_unexpectedly                    # a oneshot finishing
     assert not run(3, stop=True).died_unexpectedly          # we asked it to stop
     assert not run(-2, shutdown=True).died_unexpectedly     # the launch was ending
 
-
-def test_why_puts_an_exit_status_into_words():
     assert run(3).why() == "exit code 3"
     assert run(-9).why() == "killed by SIGKILL"
     assert run(-15).why() == "killed by SIGTERM"
@@ -74,7 +72,8 @@ def test_why_puts_an_exit_status_into_words():
     assert monitor.get(act).why() == "still running"
 
 
-def test_a_record_is_filled_in_from_the_events():
+def test_a_record_is_filled_in_and_labelled_by_node():
+    """The decision: name the node, keep the process name alongside it."""
     monitor = mon.Monitor(log=False)
     act = action()
     monitor.on_start(started(act, pid=4242, name="talker-1", env={"A": "b"}))
@@ -88,9 +87,7 @@ def test_a_record_is_filled_in_from_the_events():
     monitor.on_exit(exited(act, 0))
     assert info.exited and not info.running
 
-
-def test_a_node_is_labelled_by_its_fully_qualified_name():
-    """The decision: name the node, keep the process name alongside it."""
+    # The decision: name the node, keep the process name alongside it.
     monitor = mon.Monitor(log=False)
     node = FakeNode("/demo/turtlesim")
     monitor.on_start(started(node, name="turtlesim_node-1"))
@@ -103,15 +100,16 @@ def test_a_node_is_labelled_by_its_fully_qualified_name():
     assert monitor.get(plain).node_name is None      # not a node
     assert monitor.get(plain).label == "flaky-2"
 
-
-def test_node_name_of_ignores_what_launch_cannot_resolve():
     assert mon.node_name_of(FakeNode("/ns/n")) == "/ns/n"
     assert mon.node_name_of(action()) is None                      # raises inside
     assert mon.node_name_of(FakeNode("<unset>")) is None
+    # launch's placeholder for a node given no name: worse than no label
+    assert mon.node_name_of(FakeNode("/<node_name_unspecified>")) is None
 
 
 # ------------------------------------------------------------------ reporting
-def test_the_summary_names_every_death_and_stays_quiet_otherwise():
+def test_reporting(capsys):
+    """Launch itself returns 0 for a run where a node died; this is the fix."""
     monitor = mon.Monitor(log=False)
     good, bad = action("good"), action("bad")
     monitor.on_start(started(good, name="good-1"))
@@ -126,9 +124,7 @@ def test_the_summary_names_every_death_and_stays_quiet_otherwise():
     assert "cmd: a b" in summary
     assert [info.key for info in monitor.deaths()] == ["bad-2"]
 
-
-def test_report_makes_the_exit_code_say_a_process_died(capsys):
-    """Launch itself returns 0 for a run where a node died; this is the fix."""
+    # Launch itself returns 0 for a run where a node died; this is the fix.
     quiet = mon.Monitor(log=False)
     assert mon.report(quiet, 0) == 0
     assert capsys.readouterr().err == ""
@@ -141,8 +137,6 @@ def test_report_makes_the_exit_code_say_a_process_died(capsys):
     assert mon.report(monitor, 2) == 2          # a real code is kept
     assert "died unexpectedly" in capsys.readouterr().err
 
-
-def test_an_unexpected_death_is_logged_once_as_it_happens(capsys):
     monitor = mon.Monitor()                      # logging on, as in a real run
     act = action()
     monitor.on_start(started(act, name="flaky-2"))
@@ -150,8 +144,6 @@ def test_an_unexpected_death_is_logged_once_as_it_happens(capsys):
     logged = capsys.readouterr()
     assert "flaky-2 died unexpectedly: exit code 3" in logged.out + logged.err
 
-
-def test_handlers_cover_start_exit_output_and_shutdown():
     from launch.actions import RegisterEventHandler
 
     handlers = mon.Monitor(log=False).handlers()

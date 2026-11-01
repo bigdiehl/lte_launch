@@ -27,6 +27,7 @@ no display, `export QT_QPA_PLATFORM=offscreen` first.
 | `stock_include_launch.py` | including a **traditional** (untyped) `.launch.py` file |
 | `turtle_bringup_script.py` | **imperative** launching: start, wait, check, restart, stop, in order |
 | `flaky_demo_launch.py` | what happens when a process dies: the error, the summary, the exit code |
+| `tmux_demo_launch.py` | `--tmux`: a pane per process, windows to group an include, `--tmux-dash` dashboard (or `./run.sh`) |
 
 ### turtle_demo_launch.py — the main demo
 
@@ -179,6 +180,98 @@ Each status is named by the node's fully qualified name where there is one, with
 pid, return code and command in its key/value list. Only processes this launch started are
 tracked: a node started by a wrapper script hides behind the wrapper's pid (have the wrapper pass
 the exit code up), and a composable node has no pid of its own at all.
+
+### tmux_demo_launch.py — a pane per process
+
+Normally every process's output lands in one terminal, interleaved. `--tmux` gives each its own
+pane instead, with its own scrollback and its own **real terminal** — which is also the only way
+`turtle_teleop_key` works, since under plain launch it gives up with "Failed to get old console
+mode".
+
+Needs `lte-run` from libtmux_easy on `PATH` (once: `uv tool install --editable
+~/projects/libtmux_easy`).
+
+```bash
+tlaunch ros2_typed_launch_demo tmux_demo_launch.py --tmux
+tmux attach -t tlaunch-tmux_demo          # in another terminal
+
+# only some of them; everything else stays in this terminal as usual
+tlaunch ros2_typed_launch_demo tmux_demo_launch.py --tmux-only 'turtlesim*'
+tlaunch ros2_typed_launch_demo tmux_demo_launch.py --tmux-only '/demo/*' --tmux-only chatter
+```
+
+```
+[INFO] [tlaunch]: tmux session 'tlaunch-tmux_demo' closed (nothing failed in it)
+```
+
+`--tmux` works on **any** launch, not just this one — including the nodes of an included launch
+file, typed or stock:
+
+```bash
+tlaunch ros2_typed_launch_demo turtle_demo_launch.py --tmux
+tlaunch ros2_typed_launch_demo flaky_demo_launch.py --tmux ; echo "exit: $?"
+```
+
+Launch still owns every process, so nothing else changes: a node that dies is still reported and
+still makes the run exit non-zero. What the panes add is where the output goes.
+
+Windows group panes. This demo puts the teleop include in one of its own:
+
+```python
+window("teleop", [include(turtle_teleop, TeleopConfig(namespace=config.namespace))])
+```
+
+That works for anything an included launch starts, however deep, because all `window` does is set
+an environment variable that the pane machinery reads. Without `--tmux` it does nothing at all.
+
+Where the panes go:
+
+| Situation | What happens |
+|---|---|
+| run from a normal terminal | a session `tlaunch-<launch>` is created; tlaunch prints how to attach |
+| run from inside tmux | the windows are added to **your** session, next to what you are doing |
+| `--tmux-session NAME` | that session is used, and joined if it already exists |
+
+Nothing is ever killed to make room. At the end of the run, a session of tlaunch's own that
+nobody is attached to is closed — unless a pane's process failed, in which case that pane is the
+last of its output, so it stays and tlaunch says where:
+
+```
+[INFO] [tlaunch]: 1 failed pane(s) kept in tmux session 'tlaunch-flaky_demo' (flaky_demo)
+                  -- read them with: tmux attach -t tlaunch-flaky_demo
+```
+
+**Dashboard and log viewer** (both imply `--tmux`). Quickest: `./run.sh` at the repo root
+(`./run.sh -h` lists its modes) opens a tmux session if you are not in one, finds the log viewer
+in a ros2-term checkout if it is not installed, and runs both:
+
+```bash
+./run.sh                    # --tmux-dash --tmux-logs;  also: dash, tmux, flaky, plain
+tlaunch ros2_typed_launch_demo tmux_demo_launch.py --tmux-dash --tmux-only 'turtle*'
+tlaunch ros2_typed_launch_demo tmux_demo_launch.py --tmux-dash --tmux-logs
+```
+
+| Flag | Adds | Needs |
+|---|---|---|
+| `--tmux-dash` | window `dash`: a sidebar of every pane with live status, the selected pane in the viewport, and **home** = this run's own output (launch's log and every process *not* in a pane) | `lte-dash`: `uv tool install --editable '~/projects/libtmux_easy[dash]'` |
+| `--tmux-logs` | window `logs` running the `/rosout` viewer | `ros2-log-view` (ros2-term), or `TLAUNCH_LOG_VIEWER="cmd ..."` |
+
+In the sidebar: `j`/`k` browse, `x` stops a process (through launch, so it is not reported as a
+death), `Q` twice shuts the whole run down like Ctrl-C, `g` goes to the pane's own window. `r`
+(rerun) is refused: launch cannot run an action twice. Run from inside tmux, the dashboard opens
+in your session and is selected.
+
+Keys, borrowed for the run (no `~/.tmux.conf` needed): `prefix g` back to the dashboard,
+`prefix v` to the log window and again back. In any other session they keep their usual binding,
+and they are given back when the run ends. `TLAUNCH_DASH_KEY` / `TLAUNCH_LOGS_KEY` pick other
+keys; set to empty, nothing is borrowed. Needs `lte-key` (installed with libtmux_easy).
+
+A process in a pane prints to the pane, not this terminal. Its output is still copied to
+launch's log files and the death report, and a script can still `wait_output()` on it:
+
+```bash
+tlaunch ros2_typed_launch_demo turtle_bringup_script.py --tmux   # waits on the driver's output
+```
 
 ## The config files
 

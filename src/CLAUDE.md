@@ -5,6 +5,7 @@ public interface of a launch; the launch body is plain Python from validated
 config -> list of launch actions. Run with our own command, **`tlaunch`**.
 
 Read first, and keep updated when state or decisions change (index: `working/README.md`):
+`working/DESIGN.md` (the current design), `working/PROGRESS.md` (done / uncommitted / next),
 `working/design-notes.md` (principles, decided/open questions, reference notes),
 `working/schema-interface-and-input-dict.md` (darts `InputDict` study, **units plan U1–U6**).
 
@@ -94,6 +95,32 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   node inside the launch. **Direct children only** — a wrapper script's children and composable
   nodes (threads, no pid) are out of reach. Sessions use the same monitor, so there is one
   implementation. See design-notes Q27, `flaky_demo_launch.py`.
+- **`--tmux` puts each process in its own tmux pane** (`tmux.py` + the `tlaunch-pane` script),
+  `--tmux-only GLOB` only some (matched against the process name, that name without launch's
+  `-N` counter, and the node FQN). **Launch keeps owning the process**: it runs `tlaunch-pane`,
+  which splits a pane, runs the real command there and ends exactly as it did — so pids,
+  signals, exit codes and the death report are unchanged. The hook is `Executable.prepare`,
+  the one place every process's argv is finalised, which is why it also covers nodes started
+  from a timer, a condition, or an *included* launch file (typed or stock). A pane is a **real
+  TTY**, so `turtle_teleop_key` works. `window(name, actions)` groups processes into one window
+  via a scoped `TLAUNCH_TMUX_WINDOW` env var — that is how an include gets its own window, with
+  no new API, and it does nothing at all without `--tmux`. Running inside tmux joins that
+  session; nothing is ever killed to make room; a session of ours with no failures and nobody
+  attached is closed at the end. **The pane's output is copied back** (`lte-run --tee` → FIFO →
+  the shim's stdout, escapes stripped, stdout+stderr merged), so launch's log files, the death
+  report and `Process.wait_output()` work as without panes; `tmux.off_screen` drops only the
+  terminal echo. lte-run attaches the copy before starting the command. See design-notes
+  Q28, `tmux_demo_launch.py`.
+- **`--tmux-dash` adds libtmux_easy's dashboard** (`lte-dash`, opened with `lte-dash --open`):
+  sidebar of every pane with live status, viewport, and **home** = this run's own output, copied
+  from fd 1/2 at the descriptor (`dashboard.py`, `HomeTee`). tlaunch writes the status file from
+  the pane options `tlaunch-pane` records (`@tlaunch_*`) and answers the sidebar's control socket
+  **through launch**: stop = `ShutdownProcess` + `monitor.note_stop`, `Q` = `Shutdown`, rerun
+  refused. `--tmux-logs` adds a window running `ros2-log-view` (`TLAUNCH_LOG_VIEWER` overrides);
+  `prefix v` toggles to it and `prefix g` back to the dashboard: both **borrowed** for the run
+  with libtmux_easy's `lte-key` (in other sessions the key runs its previous binding; restored
+  at the end; `TLAUNCH_LOGS_KEY`/`TLAUNCH_DASH_KEY` override, empty = none), so `~/.tmux.conf`
+  needs nothing. See design-notes Q29.
 - **A launch can instead be an imperative script**: `@script(config=Model)` over a
   `(session, config)` function, run with `tlaunch <package> <file>` **or** `python3 <file>`
   (`target.main()`). `session.start(target)` queues a **stage** and returns a handle —
@@ -118,8 +145,7 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   Accepted trade-off: v1's YAML coercion is lenient (`tolerance: 1.7` for an `int`
   silently truncates to `1`) and `Optional[X]` with no default is silently optional, not
   required. Full comparison and rationale: `design-notes.md`.
-- **Deferred (do not work on unless asked):** tmux (would use `~/projects/libtmux_easy`,
-  a separate repo with known bugs — don't modify without asking); pluggable schema backends
+- **Deferred (do not work on unless asked):** pluggable schema backends
   / darts `InputDict` (needs `python3-darts-core`, not installable here); **node-defined
   parameter schemas** (Q24 — a node shipping its schema so a launch can look it up instead
   of restating it; explicitly parked 2026-09-27, the untyped lane covers the need for now).
@@ -131,8 +157,8 @@ Read first, and keep updated when state or decisions change (index: `working/REA
 
 The **repo root is one level above this file** (`src/CLAUDE.md`). It is a **colcon
 workspace**: `src/` (packages + docs, below), `build/ install/ log/` (colcon output,
-regenerated), `.venv/` (unused leftover — see Environment) — all at the repo root, not
-under `src/`.
+regenerated), `.venv/` (unused leftover — see Environment), `run.sh` (tmux dashboard demo) —
+all at the repo root, not under `src/`.
 
 Two **`ament_cmake`** packages under `src/`:
 
@@ -150,8 +176,13 @@ Two **`ament_cmake`** packages under `src/`:
     (node patterns + the untyped `ros__parameters`/`ros__remappings` lanes), `subst.py`
     (`$(...)` expansion), `effective.py` (the effective config as a loadable YAML file),
     `session.py` (imperative launching: `Session`/`Stage`/`Process`/`run_session`),
-    `monitor.py` (process tracking, the death report and `/diagnostics`).
-    `test/` — pytest suite (143 tests).
+    `monitor.py` (process tracking, the death report and `/diagnostics`),
+    `tmux.py` (panes: the session/windows, and the `Executable.prepare` hook),
+    `dashboard.py` (`--tmux-dash`: status file, control socket, home log).
+    `scripts/` — `tlaunch` and `tlaunch-pane` (the per-process pane stand-in: **stdlib only,
+    imports nothing of ours**, since one runs per launched process).
+    `test/` — pytest suite (60 tests; one test per behaviour, many assertions each — add
+    assertions to the matching test rather than a new test per case).
 - `ros2_typed_launch_demo/` — demo. **`README.md` lists every demo with its commands** —
   keep it updated when a demo is added or its flags change.
   - `package.xml`/`CMakeLists.txt`: installs the base package, *and* the top-level
@@ -162,25 +193,27 @@ Two **`ament_cmake`** packages under `src/`:
     `localization_launch.py`, `turtle_showcase_launch.py`, `stock_include_launch.py`,
     `turtle_params_launch.py` (typed `RosParams` + the untyped lanes via `node()`), and
     `turtle_bringup_script.py` (**imperative**: `@script`, stages, graph checks, restart),
-    `flaky_demo_launch.py` (a process that dies, to show the death report) —
+    `flaky_demo_launch.py` (a process that dies, to show the death report) and
+    `tmux_demo_launch.py` (`--tmux` panes, and `window()` around an include) —
     ordinary submodules of `ros2_typed_launch_demo.launch`, importing each other directly;
-    `__init__.py` re-exports all eight.
+    `__init__.py` re-exports them all.
   - `config/*.yaml` — example `--config` files, installed to the share dir (unaffected
     by where the Python launch files live).
   - `stock_launch/spawn_turtle.launch.py` — a traditional (untyped) launch file, installed
     to `share/ros2_typed_launch_demo/launch/` like any stock package would (not part of the
     Python package); included by `stock_include_launch.py` via stock
     `IncludeLaunchDescription` + `actions.stock_args`.
-- `working/` — docs + `prototypes/` (`nav_demo_launch.py`, `nav.yaml`: richer sample
-  schema, not part of a package — run by path). `COLCON_IGNORE`d, as is `.venv/`.
+- `working/` — docs (`DESIGN.md`, `PROGRESS.md`, `design-notes.md`, ...) + `prototypes/`
+  (`nav_demo_launch.py`, `nav.yaml`: richer sample schema, run by path). `COLCON_IGNORE`d, as is `.venv/`.
 
 ## Environment and commands
 
-ROS 2 Jazzy at `/opt/ros/jazzy`, Python 3.12, Ubuntu 24.04. Not a git repository. colcon,
+ROS 2 Jazzy at `/opt/ros/jazzy`, Python 3.12, Ubuntu 24.04. colcon,
 pytest and Pydantic all come from the **system** (`python3-pydantic` v1.10, apt/rosdep) —
 `ros2`/`tlaunch` run on `/usr/bin/python3`, which sees it by default, so **no
-`PYTHONPATH` changes are needed anywhere**. Run everything from the **repo root**. No
-wrapper script: just source ROS, then this workspace's install overlay.
+`PYTHONPATH` changes are needed anywhere**. Run everything from the **repo root**: source ROS,
+then this workspace's install overlay. `./run.sh` is only the tmux/dashboard demo (modes:
+`all`, `dash`, `tmux`, `flaky`, `plain`).
 
 ```bash
 cd ..                                                                 # repo root
@@ -205,6 +238,9 @@ tlaunch ros2_typed_launch_demo turtle_bringup_script.py --settle 2   # imperativ
 python3 src/ros2_typed_launch_demo/launch/turtle_bringup_script.py --no-drive   # same file, direct
 tlaunch ros2_typed_launch_demo flaky_demo_launch.py ; echo "exit: $?"   # death report, exit 1
 tlaunch ros2_typed_launch_demo flaky_demo_launch.py --diagnostics    # + /diagnostics at 1 Hz
+tlaunch ros2_typed_launch_demo tmux_demo_launch.py --tmux            # a pane per process
+./run.sh                          # same, + dashboard and log window (opens tmux if needed)
+tlaunch ros2_typed_launch_demo turtle_demo_launch.py --tmux-only '/demo/*'   # only some
 tlaunch <file_launch.py> --schema                                    # JSON Schema
 ```
 
@@ -264,6 +300,35 @@ timeout --foreground -s INT 20 tlaunch ... > log 2>&1
   not reach the process (and `pkill -f`/a bad `$!` can kill the calling shell — exit 144). The
   reliable way is to have the program signal itself (`os.kill(os.getpid(), SIGINT)`) or
   `timeout --foreground -s INT`.
+- **`--tmux` needs libtmux_easy's `lte-run` on `PATH`**, with `--tee` (libtmux_easy `33f57da`, 0.2.0) (`uv tool install --editable
+  ~/projects/libtmux_easy`). It runs the command inside the pane as its real parent and reports
+  the exact code/signal to `tlaunch-pane` over a unix socket (`LTE_DIR`). Improvements found here
+  go back into libtmux_easy, not around it.
+- **A FIFO with no writer reads as EOF**, so the shim holds its own write end of the output
+  FIFO open, and opens it before the pane exists (lte-run refuses a FIFO with no reader).
+- **`remain-on-exit` is set on the pane as well as the window.** The dashboard shows a pane by
+  swapping it into its own window, which lacks the window option; a process ending while on
+  show would take its pane with it, and the sidebar would say "gone".
+- **tmux's `#{pane_dead_status}`/`#{pane_dead_signal}` are not dependable** (empty ~1 in 8 with
+  `respawn-pane`; a SIGKILLed pane read `1`), and a shell in the pane turns signals into 128+N and
+  takes forwarded signals itself. Hence `lte-run`. The shim records the status as the pane option
+  `@tlaunch_status` (code, or `-N` for a signal), and `@tlaunch_stopped` (the signal name) if
+  launch asked it to stop; a stopped pane is not a failure.
+- **tmux 3.4 rejects `=name` as a session target for `set-option`/`show-options`** ("no such
+  session"), though `has-session -t =name` accepts it. Pass the bare name.
+- `tmux.tmux()` strips its output, which drops the **empty trailing fields of the last line** of
+  a `-F` listing. Read pane options with `tmux.pane_rows`, which pads.
+- **A tmux pane's process is forked by the tmux server**, so it gets the *server's* environment,
+  not the caller's — in a session the user already had open, that predates `install/setup.bash`
+  and leaves a ROS node unable to find anything. `split-window -e NAME=VALUE` per variable is
+  the fix (~66 variables in a normal run).
+- **`tmux display-message -p -t %999` for a pane that does not exist succeeds**, printing an
+  empty format rather than failing. Code that waits for an error waits forever; recognise a
+  missing pane by the empty answer.
+- `remain-on-exit` must be set on the **window** before any pane is split; setting it per pane
+  afterwards is a race a fast-failing process wins. Dead panes then accumulate until "no space
+  for new pane", so finished ones are closed before each split and the layout is re-tiled (a
+  window that is never re-tiled fits only about 6).
 - **Launch will not execute an action twice** — `ExecuteLocal action '...': executed more than
   once`, and that exception takes the whole service down. So a session restart *rebuilds*: a stage
   is restartable only from a typed launch or a factory function, never from action objects.

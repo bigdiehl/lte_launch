@@ -7,13 +7,32 @@ import pytest
 from ros2_typed_launch import loader
 
 
-def test_resolve_by_file_path(sample_launch):
+def test_resolve_by_path(sample_launch, fake_package):
     typed = loader.resolve(sample_launch)
     assert typed.config_type.__name__ == "Cfg"
 
-
-def test_resolve_by_file_path_is_cached(sample_launch):
     assert loader.resolve(sample_launch) is loader.resolve(sample_launch)
+
+    for target, match in [
+        ((), "no launch given"),
+        (("a", "b", "c"), "expected a path"),
+        (("/no/such/file_launch.py",), "is not a file"),
+    ]:
+        with pytest.raises(loader.LaunchLookupError, match=match):
+            loader.resolve(*target)
+
+    # main_launch.py does `from .child_launch import ...`; loaded by path (no
+    # parent package) that raises Python's ImportError, which we should turn
+    # into a hint to use the <package> <module> form instead -- this is
+    # exactly the pitfall of running `tlaunch some_launch.py` from inside an
+    # installed package's launch/ directory.
+    tpkg = importlib.import_module(fake_package)
+    path = str(pathlib.Path(tpkg.__file__).parent / "main_launch.py")
+    with pytest.raises(
+        loader.LaunchLookupError,
+        match="no parent package.*tlaunch ros2_typed_launch_demo",
+    ):
+        loader.resolve(path)
 
 
 def test_launch_file_names(fake_package):
@@ -22,20 +41,16 @@ def test_launch_file_names(fake_package):
         "child_launch", "main_launch", "nested_launch", "not_a_launch",
     ]
 
-
-def test_launch_file_names_of_an_unknown_package_is_empty():
     assert loader.launch_file_names("no_such_package") == []
 
 
-def test_resolve_by_module(fake_package):
+def test_resolve_by_package(fake_package):
     # Full filename, found by searching the package -- the common case (like
     # `ros2 launch <package> <file>` searches share/). ".py" is required: the
-    # bare stem alone is rejected (tested in test_resolve_unknown_target_errors).
+    # bare stem alone is rejected (see test_resolve_errors).
     typed = loader.resolve(fake_package, "main_launch.py")
     assert typed.config_type.__name__ == "MainConfig"
 
-
-def test_resolve_equivalent_spellings_of_a_nested_subpackage_module(fake_package):
     # The dotted form (launch.nested_launch) and the on-disk slash form
     # (launch/nested_launch.py, leading "/" optional) must resolve to the
     # identical module.
@@ -47,10 +62,27 @@ def test_resolve_equivalent_spellings_of_a_nested_subpackage_module(fake_package
     # to the same module too.
     assert loader.resolve(fake_package, "nested_launch.py") is dotted
 
+    # The point of module-based resolution: no separate loading path, so a
+    # launch reached via resolve() and via `import` are the same object.
+    via_loader = loader.resolve(fake_package, "child_launch.py")
+    imported = importlib.import_module(f"{fake_package}.child_launch")
+    assert via_loader is imported.child
 
-def test_resolve_by_bare_name_ambiguous_between_two_files_of_the_same_stem(
-    tmp_path, monkeypatch
-):
+    assert loader.load_launch(fake_package, "child_launch.py") is loader.resolve(
+        fake_package, "child_launch.py"
+    )
+
+    # main_launch.py does `from .child_launch import ChildConfig, child` and
+    # includes it; if that relative import failed, loading would have raised.
+    typed = loader.resolve(fake_package, "main_launch.py")
+    from launch.actions import GroupAction
+
+    [group] = typed.build(typed.config_type(n=7))
+    assert isinstance(group, GroupAction)
+    assert "child-7" in group.get_sub_entities()
+
+
+def test_ambiguous_names_and_import_cycles_are_clear_errors(tmp_path, monkeypatch):
     pkg = tmp_path / "ambig"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("")
@@ -71,97 +103,6 @@ def test_resolve_by_bare_name_ambiguous_between_two_files_of_the_same_stem(
             if name == "ambig" or name.startswith("ambig."):
                 del sys.modules[name]
 
-
-def test_resolve_by_module_supports_relative_imports_between_launch_files(
-    fake_package,
-):
-    # main_launch.py does `from .child_launch import ChildConfig, child` and
-    # includes it; if that relative import failed, loading would have raised.
-    typed = loader.resolve(fake_package, "main_launch.py")
-    from launch.actions import GroupAction
-
-    [group] = typed.build(typed.config_type(n=7))
-    assert isinstance(group, GroupAction)
-    assert "child-7" in group.get_sub_entities()
-
-
-def test_resolve_by_module_is_the_same_module_as_a_plain_import(fake_package):
-    # The point of module-based resolution: no separate loading path, so a
-    # launch reached via resolve() and via `import` are the same object.
-    via_loader = loader.resolve(fake_package, "child_launch.py")
-    imported = importlib.import_module(f"{fake_package}.child_launch")
-    assert via_loader is imported.child
-
-
-def test_load_launch_is_resolve(fake_package):
-    assert loader.load_launch(fake_package, "child_launch.py") is loader.resolve(
-        fake_package, "child_launch.py"
-    )
-
-
-def test_resolve_unknown_target_errors(fake_package):
-    with pytest.raises(loader.LaunchLookupError, match="package 'no_such_pkg' not found"):
-        loader.resolve("no_such_pkg", "x.py")
-    with pytest.raises(
-        loader.LaunchLookupError,
-        match="no launch file named 'no_such_module.py' in package 'tpkg'",
-    ):
-        loader.resolve(fake_package, "no_such_module.py")  # full filename, searched
-    with pytest.raises(
-        loader.LaunchLookupError,
-        match="no launch module 'launch.no_such_module' in package 'tpkg'",
-    ):
-        loader.resolve(fake_package, "launch.no_such_module")  # explicit dotted path
-
-
-def test_resolve_requires_the_py_extension_or_a_dotted_path(fake_package):
-    # A bare stem with no ".py" and no "." is neither a valid filename nor a
-    # dotted module path -- rejected with a hint, not silently searched.
-    with pytest.raises(
-        loader.LaunchLookupError,
-        match=r"give the full filename, including '\.py'",
-    ):
-        loader.resolve(fake_package, "main_launch")
-
-
-def test_resolve_module_that_is_not_a_typed_launch(fake_package):
-    with pytest.raises(loader.LaunchLookupError, match="not a typed launch file"):
-        loader.resolve(fake_package, "not_a_launch.py")
-
-
-def test_resolve_by_path_of_a_file_with_relative_imports_gives_a_helpful_error(
-    fake_package,
-):
-    # main_launch.py does `from .child_launch import ...`; loaded by path (no
-    # parent package) that raises Python's ImportError, which we should turn
-    # into a hint to use the <package> <module> form instead -- this is
-    # exactly the pitfall of running `tlaunch some_launch.py` from inside an
-    # installed package's launch/ directory.
-    tpkg = importlib.import_module(fake_package)
-    path = str(pathlib.Path(tpkg.__file__).parent / "main_launch.py")
-    with pytest.raises(
-        loader.LaunchLookupError,
-        match="no parent package.*tlaunch ros2_typed_launch_demo",
-    ):
-        loader.resolve(path)
-
-
-@pytest.mark.parametrize(
-    "target,match",
-    [
-        ((), "no launch given"),
-        (("a", "b", "c"), "expected a path"),
-        (("/no/such/file_launch.py",), "is not a file"),
-    ],
-)
-def test_resolve_rejects_bad_targets(target, match):
-    with pytest.raises(loader.LaunchLookupError, match=match):
-        loader.resolve(*target)
-
-
-def test_import_cycle_between_launch_files_gives_a_python_import_error(
-    tmp_path, monkeypatch
-):
     # Verified behaviour, not guessed: a genuine import cycle is caught by
     # Python's own import machinery with a clear error, no special handling
     # needed on our side.
@@ -178,3 +119,31 @@ def test_import_cycle_between_launch_files_gives_a_python_import_error(
         for name in list(sys.modules):
             if name == "cyc" or name.startswith("cyc."):
                 del sys.modules[name]
+
+
+def test_resolve_errors(fake_package):
+    with pytest.raises(loader.LaunchLookupError, match="package 'no_such_pkg' not found"):
+        loader.resolve("no_such_pkg", "x.py")
+    with pytest.raises(
+        loader.LaunchLookupError,
+        match="no launch file named 'no_such_module.py' in package 'tpkg'",
+    ):
+        loader.resolve(fake_package, "no_such_module.py")  # full filename, searched
+    with pytest.raises(
+        loader.LaunchLookupError,
+        match="no launch module 'launch.no_such_module' in package 'tpkg'",
+    ):
+        loader.resolve(fake_package, "launch.no_such_module")  # explicit dotted path
+
+    # A bare stem with no ".py" and no "." is neither a valid filename nor a
+    # dotted module path -- rejected with a hint, not silently searched.
+    with pytest.raises(
+        loader.LaunchLookupError,
+        match=r"give the full filename, including '\.py'",
+    ):
+        loader.resolve(fake_package, "main_launch")
+
+    with pytest.raises(loader.LaunchLookupError, match="not a typed launch file"):
+        loader.resolve(fake_package, "not_a_launch.py")
+
+

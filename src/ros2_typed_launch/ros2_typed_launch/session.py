@@ -37,7 +37,6 @@ import os
 import re
 import threading
 import time
-from collections import deque
 from typing import Any, Callable, Iterator
 
 from . import ros_config as rc
@@ -722,6 +721,9 @@ def run_session(
     monitor = mon.Monitor()
     session = Session(service, ros=ros, debug=debug, monitor=monitor)
     service.include_launch_description(session.bootstrap())
+    from . import tmux as tm
+
+    tm.attach_run(service, monitor)     # the dashboard's stop/shutdown, if any
     publisher = mon.Diagnostics(monitor) if diagnostics else None
 
     result: dict[str, Any] = {}

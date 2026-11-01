@@ -64,15 +64,13 @@ def io(action, text, name="proc-1", env=None):
 
 
 # --------------------------------------------------------------- small helpers
-def test_matcher_takes_a_substring_or_a_regex():
+def test_helpers():
     assert sess._matcher("ready")("node is ready now")
     assert not sess._matcher("ready")("still waiting")
     assert sess._matcher(re.compile(r"rc=\d+"))("exit rc=3")
     with pytest.raises(TypeError, match="string or a compiled regex"):
         sess._matcher(3)
 
-
-def test_declared_name_reads_through_launchs_normalization():
     # ExecuteProcess turns name="driver" into [TextSubstitution("driver")].
     assert sess._declared_name(ExecuteProcess(name="driver", cmd=["x"])) == "driver"
     assert sess._declared_name(ExecuteProcess(cmd=["x"])) is None
@@ -86,8 +84,6 @@ def test_declared_name_reads_through_launchs_normalization():
     runtime = Node(package="p", executable="e", name=LaunchConfiguration("n"))
     assert sess._declared_name(runtime) is None
 
-
-def test_execute_processes_walks_into_groups_only_as_far_as_it_can():
     from launch.actions import GroupAction, IncludeLaunchDescription
 
     inner = ExecuteProcess(name="inner", cmd=["x"])
@@ -102,19 +98,16 @@ def test_execute_processes_walks_into_groups_only_as_far_as_it_can():
 
 
 # ------------------------------------------------------------------ the waits
-def test_wait_returns_what_the_predicate_found():
+def test_waits():
+    """The Ctrl-C contract: a wait raises at once so the script's cleanup runs."""
     session, _ = make_session()
     assert session._wait(lambda: "value", 1.0, "something") == "value"
 
-
-def test_wait_times_out_with_a_message_naming_what_it_wanted():
     session, _ = make_session()
     with pytest.raises(sess.WaitTimeout, match="waiting for the moon"):
         session._wait(lambda: False, 0.1, "the moon")
 
-
-def test_wait_gives_up_as_soon_as_shutdown_starts():
-    """The Ctrl-C contract: a wait raises at once so the script's cleanup runs."""
+    # The Ctrl-C contract: a wait raises at once so the script's cleanup runs.
     session, _ = make_session()
     threading.Timer(0.05, lambda: session._on_shutdown(SimpleNamespace(), None)).start()
     start = time.monotonic()
@@ -122,8 +115,6 @@ def test_wait_gives_up_as_soon_as_shutdown_starts():
         session._wait(lambda: False, 30.0, "a signal")   # would block for 30s
     assert time.monotonic() - start < 5.0
 
-
-def test_sleep_is_interruptible_but_otherwise_just_returns():
     session, _ = make_session()
     session.sleep(0.05)                                  # no exception
     session._on_shutdown(SimpleNamespace(due_to_sigint=True), None)
@@ -145,7 +136,7 @@ def demo_launch(config: DemoConfig):
     ]
 
 
-def test_start_builds_a_stage_keyed_by_declared_name():
+def test_start():
     session, service = make_session()
     stage = session.start(demo_launch, DemoConfig(n=5))
 
@@ -155,8 +146,6 @@ def test_start_builds_a_stage_keyed_by_declared_name():
     with pytest.raises(KeyError, match="has no process named 'third'"):
         stage["third"]
 
-
-def test_start_rejects_the_wrong_config_type():
     class Other(BaseModel):
         pass
 
@@ -164,8 +153,6 @@ def test_start_rejects_the_wrong_config_type():
     with pytest.raises(TypeError, match="takes DemoConfig, got Other"):
         session.start(demo_launch, Other())
 
-
-def test_start_accepts_actions_a_factory_or_a_launch_description():
     import launch
 
     session, _ = make_session()
@@ -180,8 +167,6 @@ def test_start_accepts_actions_a_factory_or_a_launch_description():
     with pytest.raises(TypeError, match="start\\(\\) takes"):
         session.start("not an action")
 
-
-def test_duplicate_names_stay_addressable():
     session, _ = make_session()
     stage = session.start(
         [ExecuteProcess(name="same", cmd=["x"]), ExecuteProcess(name="same", cmd=["x"])]
@@ -189,7 +174,7 @@ def test_duplicate_names_stay_addressable():
     assert sorted(stage.processes) == ["same", "same#2"]
 
 
-def test_only_a_rebuildable_stage_can_restart():
+def test_restart():
     session, _ = make_session()
     assert session.start(demo_launch, DemoConfig()).rebuildable
     assert session.start(lambda: [ExecuteProcess(name="a", cmd=["x"])]).rebuildable
@@ -199,8 +184,11 @@ def test_only_a_rebuildable_stage_can_restart():
     with pytest.raises(sess.SessionError, match="will not run an action twice"):
         from_actions.restart()
 
+    session, _ = make_session()
+    stage = session.start(demo_launch, DemoConfig())
+    with pytest.raises(sess.SessionError, match="restart its stage"):
+        stage["first"].restart()
 
-def test_restart_rebuilds_and_keeps_the_same_keys():
     session, service = make_session()
     stage = session.start(demo_launch, DemoConfig())
     first, second = stage["first"], stage["second"]
@@ -223,7 +211,7 @@ def test_restart_rebuilds_and_keeps_the_same_keys():
 
 
 # ------------------------------------------------------- events -> handle state
-def test_events_fill_in_pid_output_and_exit_status():
+def test_events_fill_in_the_handles():
     session, _ = make_session()
     stage = session.start(demo_launch, DemoConfig())
     action = stage["first"].action
@@ -241,10 +229,16 @@ def test_events_fill_in_pid_output_and_exit_status():
     assert stage["first"].wait_exited(0.1) == 3
     assert not stage["first"].running
 
+    session, _ = make_session()
+    stage = session.start(demo_launch, DemoConfig())
+    session._on_start(started(stage["first"].action), None)
+    with pytest.raises(sess.WaitTimeout, match="stage 'demo_launch' to start"):
+        stage.wait_started(timeout=0.1)
+    session._on_start(started(stage["second"].action), None)
+    stage.wait_started(timeout=0.1)
 
-def test_a_process_from_an_included_launch_file_lands_in_its_stage():
-    """We never see that action, so the stage marker in the environment is what
-    attributes it (that is what STAGE_ENV is for)."""
+    # We never see that action, so the stage marker in the environment is what
+    # attributes it (that is what STAGE_ENV is for).
     session, _ = make_session()
     stage = session.start(demo_launch, DemoConfig())
     surprise = ExecuteProcess(cmd=["x"])     # not built by us
@@ -256,8 +250,6 @@ def test_a_process_from_an_included_launch_file_lands_in_its_stage():
     assert stage["helper-7"].pid == 111
     assert session.processes                 # also in the session-wide registry
 
-
-def test_an_unattributable_process_is_still_tracked():
     session, _ = make_session()
     orphan = ExecuteProcess(cmd=["x"])
     session._on_start(started(orphan, name="orphan-1"), None)
@@ -265,17 +257,7 @@ def test_an_unattributable_process_is_still_tracked():
     assert session.stages == []
 
 
-def test_stage_wait_started_needs_every_process():
-    session, _ = make_session()
-    stage = session.start(demo_launch, DemoConfig())
-    session._on_start(started(stage["first"].action), None)
-    with pytest.raises(sess.WaitTimeout, match="stage 'demo_launch' to start"):
-        stage.wait_started(timeout=0.1)
-    session._on_start(started(stage["second"].action), None)
-    stage.wait_started(timeout=0.1)
-
-
-def test_stop_emits_one_shutdown_event_per_running_process():
+def test_stop():
     from launch.events.process import ShutdownProcess
 
     session, service = make_session()
@@ -290,9 +272,7 @@ def test_stop_emits_one_shutdown_event_per_running_process():
     assert event.process_matcher(stage["first"].action)
     assert not event.process_matcher(stage["second"].action)
 
-
-def test_a_process_from_an_include_can_still_be_stopped_on_its_own():
-    """We did not build its action, but the start event handed it to us."""
+    # We did not build its action, but the start event handed it to us.
     from launch.events.process import ShutdownProcess
 
     session, service = make_session()
@@ -307,13 +287,6 @@ def test_a_process_from_an_include_can_still_be_stopped_on_its_own():
     event = service.events[-1]
     assert isinstance(event, ShutdownProcess) and event.process_matcher(surprise)
     assert session.monitor.get(surprise).stop_requested   # so it is not a "death"
-
-
-def test_process_restart_points_at_the_stage():
-    session, _ = make_session()
-    stage = session.start(demo_launch, DemoConfig())
-    with pytest.raises(sess.SessionError, match="restart its stage"):
-        stage["first"].restart()
 
 
 # ----------------------------------------------------------- the real service
@@ -335,13 +308,14 @@ def demo_script(session, config: ScriptConfig):
 
 def test_run_session_drives_a_real_launch_service():
     """The whole contract, for real: service on the main thread, script on a
-    worker, output and exit status observed through the handles."""
+    worker, output and exit status observed through the handles; and a script
+    that raises stops the session and propagates."""
+    # The whole contract, for real: service on the main thread, script on a
+    # worker, output and exit status observed through the handles.
     assert sess.run_session(
         lambda session: demo_script.run(session, ScriptConfig(word="banana"))
     ) == 0
 
-
-def test_a_script_that_raises_stops_the_session_and_propagates():
     def body(session):
         stage = session.start(
             lambda: [ExecuteProcess(name="sleeper", cmd=["sleep", "60"])]
@@ -351,3 +325,5 @@ def test_a_script_that_raises_stops_the_session_and_propagates():
 
     with pytest.raises(ValueError, match="boom"):
         sess.run_session(body)
+
+

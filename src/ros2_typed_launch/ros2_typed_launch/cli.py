@@ -17,6 +17,7 @@ flags, validated, and only then is anything started.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -47,11 +48,12 @@ USAGE = (
 # can never collide with a schema field (Q18).
 OWN_WITH_VALUE = {
     "--config", "--launch-prefix", "--launch-prefix-filter",
-    "--ros-param", "--ros-remap",
+    "--ros-param", "--ros-remap", "--tmux-only", "--tmux-session",
 }
 OWN_FLAGS = {
     "-h", "--help", "--schema", "--show-config",
     "-n", "--noninteractive", "-d", "--debug", "--strict", "--diagnostics",
+    "--tmux", "--tmux-dash", "--tmux-logs",
 }
 RESERVED = OWN_WITH_VALUE | OWN_FLAGS
 
@@ -305,6 +307,35 @@ def add_own_args(parser: argparse.ArgumentParser):
         "and the end-of-run summary happen either way",
     )
     g.add_argument(
+        "--tmux", action="store_true", dest="$tmux",
+        help="run each process in its own tmux pane instead of merging all "
+        "their output into this terminal. Needs tmux; joins the session "
+        "tlaunch is in, if it is in one, and opens one otherwise",
+    )
+    g.add_argument(
+        "--tmux-only", action="append", default=[], dest="$tmux_only",
+        metavar="GLOB",
+        help="put only the processes matching GLOB in panes (implies --tmux); "
+        "matched against the process name and the node's full name, so "
+        "'turtlesim*' and '/demo/*' both work. Repeatable",
+    )
+    g.add_argument(
+        "--tmux-dash", action="store_true", dest="$tmux_dash",
+        help="add a dashboard window (libtmux_easy's lte-dash): every pane "
+        "with its status, and a home page with this run's own output "
+        "(implies --tmux)",
+    )
+    g.add_argument(
+        "--tmux-logs", action="store_true", dest="$tmux_logs",
+        help="add a window running the /rosout log viewer, ros2-log-view "
+        "(implies --tmux)",
+    )
+    g.add_argument(
+        "--tmux-session", dest="$tmux_session", metavar="NAME",
+        help="use this tmux session instead of choosing a name (implies "
+        "--tmux). It is joined if it exists; nothing in it is ever killed",
+    )
+    g.add_argument(
         "--strict", action="store_true", dest="$strict",
         help="refuse untyped ROS parameters and remappings, and make every "
         "config warning an error: the schema must then describe everything",
@@ -501,6 +532,53 @@ def build_actions(typed: TypedLaunch, config: Any, ros: rc.RosConfig, own: dict)
     return actions
 
 
+#: Any of these turns panes on: naming a session, picking processes or asking
+#: for the dashboard without also passing --tmux is plainly asking for panes.
+TMUX_FLAGS = ("tmux", "tmux_only", "tmux_session", "tmux_dash", "tmux_logs")
+
+
+def tmux_label(target: list[str]) -> str:
+    """A short name for the run, for a tmux session to be called after."""
+    stem = os.path.basename(target[-1] if target else "launch")
+    for suffix in (".py", "_launch", "_script"):
+        stem = stem[: -len(suffix)] if stem.endswith(suffix) else stem
+    # tmux reads '.' and ':' in a name as part of a target address.
+    return re.sub(r"[^A-Za-z0-9_-]", "-", stem) or "launch"
+
+
+@contextlib.contextmanager
+def panes_for(own: dict[str, Any], target: list[str]):
+    """Send processes to tmux panes for the duration, if asked to (Q28).
+
+    Set up here, around both a launch and a script, because what it changes is
+    how *every* process in this interpreter is started -- so it belongs in one
+    place, before anything can start, and is undone afterwards.
+    """
+    if not any(own[flag] for flag in TMUX_FLAGS):
+        yield None
+        return
+    from . import tmux as tm
+
+    panes = tm.Panes(tmux_label(target), session=own["tmux_session"],
+                     dash=own["tmux_dash"], logs=own["tmux_logs"])
+    try:
+        panes.start()
+        undo = tm.patch(panes, own["tmux_only"])
+        try:
+            panes.open_extras()
+            if panes.dash is not None and not panes.joined:
+                print(f"[INFO] [{PROG}]: dashboard in tmux session "
+                      f"'{panes.session}' -- tmux attach -t {panes.session}")
+            yield panes
+        finally:
+            undo()
+            news = panes.finish()
+            if news:
+                print(f"[INFO] [{PROG}]: {news}")
+    except tm.TmuxError as exc:
+        raise TlaunchError(str(exc)) from None
+
+
 def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any],
                ros: rc.RosConfig, sources: dict, label: str) -> int:
     import launch
@@ -533,6 +611,9 @@ def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any],
     service.include_launch_description(
         launch.LaunchDescription(monitor.handlers() + actions)
     )
+    from . import tmux as tm
+
+    tm.attach_run(service, monitor)     # the dashboard's stop/shutdown, if any
     if publisher is not None:
         publisher.start()
     try:
@@ -640,9 +721,10 @@ def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
         )
         return 0
 
-    if isinstance(typed, TypedScript):
-        return run_script(typed, config, own, ros, sources, label)
-    return run_launch(typed, config, own, ros, sources, label)
+    with panes_for(own, target):
+        if isinstance(typed, TypedScript):
+            return run_script(typed, config, own, ros, sources, label)
+        return run_launch(typed, config, own, ros, sources, label)
 
 
 def main(argv: list[str] | None = None, *, target: TypedTarget | None = None) -> int:

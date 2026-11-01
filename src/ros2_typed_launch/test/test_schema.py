@@ -45,7 +45,7 @@ def specs():
     return {s.dotted: s for s in schema.walk(M)}
 
 
-def test_walk_flattens_nested_models_to_dotted_paths():
+def test_walk_flattens_and_describes_every_field():
     assert set(specs()) == {
         "name", "flag", "algo", "maybe", "req", "tags", "params", "typed",
         "items", "sub.a", "sub.tol",
@@ -53,8 +53,6 @@ def test_walk_flattens_nested_models_to_dotted_paths():
     assert specs()["sub.a"].path == ("sub", "a")
     assert specs()["sub.a"].owner is Sub
 
-
-def test_walk_kinds():
     s = specs()
     assert s["name"].kind == "scalar" and s["name"].type_name == "TEXT"
     assert s["flag"].kind == "bool" and s["flag"].is_bool
@@ -71,8 +69,6 @@ def test_walk_kinds():
     assert s["sub.a"].kind == "scalar" and s["sub.a"].type_name == "INT"
     assert s["sub.tol"].kind == "scalar" and s["sub.tol"].type_name == "FLOAT"
 
-
-def test_walk_required_and_defaults():
     s = specs()
     assert s["req"].required and s["req"].default is schema.MISSING
     assert not s["name"].required and s["name"].default == "robot"
@@ -81,53 +77,43 @@ def test_walk_required_and_defaults():
     assert s["sub.a"].default == 2
     assert s["sub.tol"].default == 0.5
 
-
-def test_walk_constraints_and_description():
     s = specs()
     assert s["sub.a"].constraints == ">=0, <=10"
     assert s["sub.a"].description == "an int"
     assert s["sub.tol"].constraints == ">0"
 
-
-def test_summary_uses_own_docstring_only():
     assert schema.summary(M) == "Top docs."
     assert schema.summary(Item) == ""
 
 
-def test_unknown_keys_reports_typos_with_suggestions():
+def test_unknown_keys():
     issues = schema.unknown_keys(M, {"nmae": 1, "sub": {"tolx": 1, "a": 3}, "req": 1})
     found = {".".join(i.path): i.message for i in issues}
     assert "did you mean 'name'" in found["nmae"]
     assert "unknown key" in found["sub.tolx"]
     assert len(found) == 2
 
-
-def test_unknown_keys_edge_cases():
     assert schema.unknown_keys(M, {"params": {"anything": 1}}) == []  # free-form dict
     issues = schema.unknown_keys(M, {"sub": 3})  # nested model given a scalar
     assert issues and "mapping" in issues[0].message
 
 
-def test_validate_returns_instance():
+def test_validate_and_dump():
     m = schema.validate(M, {"req": "3", "sub": {"a": "4"}})
     assert m.req == 3 and m.sub.a == 4
 
-
-def test_validate_reports_issues_with_paths_and_input():
     with pytest.raises(schema.SchemaError) as err:
         schema.validate(M, {"req": 1, "sub": {"a": 99, "tol": -1}})
     got = {".".join(i.path): i for i in err.value.issues}
     assert set(got) == {"sub.a", "sub.tol"}
     assert got["sub.a"].input == 99 and not got["sub.a"].missing
 
-
-def test_validate_marks_missing_fields():
     with pytest.raises(schema.SchemaError) as err:
         schema.validate(M, {})
     assert [(".".join(i.path), i.missing) for i in err.value.issues] == [("req", True)]
 
-
-def test_json_schema_and_plain_dump():
     sch = schema.json_schema(M)
     assert sch["properties"]["req"]["type"] == "integer"
     assert schema.to_plain(schema.validate(M, {"req": 1}))["sub"]["a"] == 2
+
+

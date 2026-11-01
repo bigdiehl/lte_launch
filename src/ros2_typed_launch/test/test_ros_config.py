@@ -7,26 +7,24 @@ from ros2_typed_launch import ros_config as rc
 
 
 # ------------------------------------------------------------------ patterns
-@pytest.mark.parametrize(
-    "pattern,fqn,expected",
-    [
-        ("/**", "/talker", True),                  # ** is zero or more tokens
-        ("/**", "/ns/sub/talker", True),
-        ("/**/planner", "/planner", True),
-        ("/**/planner", "/a/b/planner", True),
-        ("/**/planner", "/planner2", False),       # not a prefix match
-        ("/ns/*", "/ns/talker", True),             # * is exactly one token
-        ("/ns/*", "/ns/sub/talker", False),
-        ("/ns/*", "/other/talker", False),
-        ("/ns/talker", "/ns/talker", True),
-        ("/ns/talker", "/ns/talker2", False),
-    ],
-)
-def test_pattern_matching(pattern, fqn, expected):
-    assert bool(rc.pattern_regex(pattern).match(fqn)) is expected
+PATTERNS = [
+    ("/**", "/talker", True),                  # ** is zero or more tokens
+    ("/**", "/ns/sub/talker", True),
+    ("/**/planner", "/planner", True),
+    ("/**/planner", "/a/b/planner", True),
+    ("/**/planner", "/planner2", False),       # not a prefix match
+    ("/ns/*", "/ns/talker", True),             # * is exactly one token
+    ("/ns/*", "/ns/sub/talker", False),
+    ("/ns/*", "/other/talker", False),
+    ("/ns/talker", "/ns/talker", True),
+    ("/ns/talker", "/ns/talker2", False),
+]
 
 
-def test_is_node_pattern():
+def test_patterns():
+    for pattern, fqn, expected in PATTERNS:
+        assert bool(rc.pattern_regex(pattern).match(fqn)) is expected, (pattern, fqn)
+
     # Looks like a pattern...
     assert rc.is_node_pattern("/**", None)
     assert rc.is_node_pattern("/ns/node", None)
@@ -37,22 +35,20 @@ def test_is_node_pattern():
 
 
 # ------------------------------------------------------------------ sections
-def test_parse_sections_flattens_nested_param_names():
+def test_parse_sections():
     # ROS nests parameter names with dots, exactly as rcl reads a param file.
     sections = rc.parse_sections(
         {"/**": {"ros__parameters": {"qos": {"depth": 10}, "flat": 1}}}, "f.yaml"
     )
     assert sections[0].params == {"qos.depth": 10, "flat": 1}
 
-
-def test_parse_sections_rejects_unknown_keys_and_names_the_rename():
     with pytest.raises(rc.RosConfigError, match=r"spelled 'ros__remappings'"):
         rc.parse_sections({"/**": {"remappings": {"/a": "/b"}}}, "f.yaml")
     with pytest.raises(rc.RosConfigError, match="unknown key"):
         rc.parse_sections({"/**": {"ros__params": {}}}, "f.yaml")
 
 
-def test_for_node_later_sections_win_and_matches_are_recorded():
+def test_for_node():
     ros = rc.RosConfig([
         rc.Section("/**", {"a": 1, "b": 2}, {}, "first.yaml"),
         rc.Section("/**/talker", {"b": 3}, {"/in": "/out"}, "second.yaml"),
@@ -64,8 +60,6 @@ def test_for_node_later_sections_win_and_matches_are_recorded():
     # Only the section that reached nothing is reported.
     assert [s.pattern for s in ros.unmatched()] == ["/other"]
 
-
-def test_for_node_without_a_name_only_gets_universal_patterns():
     # No name= means rcl picks the executable's default at startup, which we
     # cannot know, so a targeted pattern must not silently apply.
     ros = rc.RosConfig([
@@ -76,7 +70,7 @@ def test_for_node_without_a_name_only_gets_universal_patterns():
 
 
 # --------------------------------------------------------------- file shape
-def test_split_file_separates_the_two_parts(write):
+def test_split_file(write):
     path = write(
         "c.yaml",
         """
@@ -95,8 +89,6 @@ def test_split_file_separates_the_two_parts(write):
     assert sections[0].params == {"use_sim_time": True}
     assert sections[1].remaps == {"/scan": "/lidar/scan"}
 
-
-def test_split_file_rejects_the_old_bare_root_shape(write):
     # The pre-launch_args file shape: a schema key at the top level. Must say so,
     # not silently ignore the file's contents.
     path = write("c.yaml", "turtlesim: {background_r: 99}\n", raw=True)
@@ -105,7 +97,7 @@ def test_split_file_rejects_the_old_bare_root_shape(write):
 
 
 # ------------------------------------------------- names handed to rcl (// etc.)
-def test_tidy_repairs_what_substitution_produces():
+def test_names_handed_to_rcl_are_tidied_and_checked():
     # An empty namespace is the root, so "//joy_vel" means "/joy_vel" -- but ROS
     # rejects a repeated slash outright, and a node handed one aborts at startup.
     assert rc.tidy("//joy_vel") == "/joy_vel"
@@ -115,19 +107,16 @@ def test_tidy_repairs_what_substitution_produces():
     assert rc.tidy("/") == "/"                      # the root survives
     assert rc.tidy("turtle1/cmd_vel") == "turtle1/cmd_vel"
 
-
-def test_check_name_accepts_every_legal_remap_form():
     pytest.importorskip("rclpy")
     for name in ["/joy_vel", "turtle1/cmd_vel", "~/cmd_vel", "{ns}/cmd_vel"]:
         assert rc.check_name(name, "where") == name
     assert rc.check_name("//joy_vel", "where") == "/joy_vel"
 
-
-def test_check_name_turns_an_rcl_abort_into_a_config_error():
-    """Unchecked, 'joy vel' reaches the node as a remap rule and it dies with
-    "Couldn't parse remap rule ... Error: error not set" and SIGABRT."""
-    pytest.importorskip("rclpy")
+    # Unchecked, 'joy vel' reaches the node as a remap rule and it dies with
+    # "Couldn't parse remap rule ... Error: error not set" and SIGABRT.
     with pytest.raises(rc.RosConfigError, match="is not a valid ROS name"):
         rc.check_name("joy vel", "a.yaml:/**.ros__remappings")
     with pytest.raises(rc.RosConfigError, match="where: '' is not a valid"):
         rc.check_name("", "where")
+
+

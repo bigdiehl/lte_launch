@@ -1,4 +1,4 @@
-from .actions import include, node, stock_args
+from .actions import include, node, stock_args, window
 from .core import TypedLaunch, TypedScript, launch, script
 from .loader import load_launch
 from .schema import RosParams
@@ -20,4 +20,5 @@ __all__ = [
     "node",
     "script",
     "stock_args",
+    "window",
 ]
