@@ -14,8 +14,8 @@ In general, supporting some checks would be nice.
         - [DONE] Does node exist?        -- session.wait_for_node / node_names()
         - [DONE] Does topic exist?       -- session.wait_for_topic
         - [DONE] Is topic publishing?    -- session.wait_for_topic(publishers=N)
-    - Still missing: these are only available inside a script, not as checks a
-      plain launch declares.
+    - [DONE] As checks a plain launch declares: checks.node/topic/output with
+      then=[...]; see design-notes Q30 and turtle_checks_launch.py
 
 3. [DONE] Tmux incorporation.
     - [DONE] Optionally launch all processes in different tmux panes? For debugging?
@@ -50,14 +50,15 @@ Other
       -- ros__parameters / ros__remappings under node patterns, via node(); Q8
     - [DONE] Multiple configs, merged together. Showing source from each
       -- --show-config prints every value with its source
-    - Cleanup --help
+    - [DONE] Cleanup --help -- launch arguments first, tlaunch options grouped
     - [DONE] Support $(command arg) syntax in config files
       -- and find-pkg-share/find-pkg-prefix/env/eval, via the stock launch parser; Q25
 
 
-Setting of log verbosity level? (e.g. to debug?)
+[DONE] Setting of log verbosity level? (e.g. to debug?)
+    -- --log-level LEVEL|LOGGER:=LEVEL for every ROS node; -d for launch's own; Q31
 
 log all final commands, remappings, parameters
     - [PARTLY] parameters/remappings and the whole effective config are written to
       /tmp/tlaunch/<launch>-<pid>.yaml on every run, and the path is logged.
-      Still missing: the final process command lines (stock launch's --print).
+    - [DONE] the final process command lines: --log-commands; Q31

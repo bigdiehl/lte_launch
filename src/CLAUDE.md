@@ -132,6 +132,11 @@ Read first, and keep updated when state or decisions change (index: `working/REA
   int if it returns one, else the service's (130 on Ctrl-C). Scripts are named `*_script.py` and
   live beside launch files; `loader.TARGET_SUFFIXES` is what makes both findable. See
   `session.py`, `turtle_bringup_script.py`, design-notes Q26.
+- **A plain launch can declare checks** (`checks.py`): `checks.node("/ns/x", then=[...])`,
+  `checks.topic(...)`, `checks.output(action, "ready")`. Each waits in launch's own loop and
+  starts `then` once it passes; a timeout is an error, a summary line, a non-zero exit and (by
+  default) a shutdown. Works under stock `ros2 launch` too, minus summary/exit code. Q30,
+  `turtle_checks_launch.py`.
 - Stock `launch`/`launch_ros` actions are used as-is (`PushRosNamespace`, `SetParameter`,
   `TimerAction`, event handlers, ...); see `turtle_showcase_launch.py`. A typed launch can
   also **include a traditional (untyped) stock launch file** via stock
@@ -180,10 +185,13 @@ Two **`ament_cmake`** packages under `src/`:
     `session.py` (imperative launching: `Session`/`Stage`/`Process`/`run_session`),
     `monitor.py` (process tracking, the death report and `/diagnostics`),
     `tmux.py` (panes: the session/windows, and the `Executable.prepare` hook),
-    `dashboard.py` (`--tmux-dash`: status file, control socket, home log).
+    `dashboard.py` (`--tmux-dash`: status file, control socket, home log),
+    `checks.py` (declared checks: `node`/`topic`/`output` actions with `then`; needs `launch`
+    at import, so not exported from `__init__`), `commands.py` (`--log-level`,
+    `--log-commands`: an `Executable.prepare` hook installed before tmux's).
     `scripts/` — `tlaunch` and `tlaunch-pane` (the per-process pane stand-in: **stdlib only,
     imports nothing of ours**, since one runs per launched process).
-    `test/` — pytest suite (60 tests; one test per behaviour, many assertions each — add
+    `test/` — pytest suite (64 tests; one test per behaviour, many assertions each — add
     assertions to the matching test rather than a new test per case).
 - `ros2_typed_launch_demo/` — demo. **`README.md` lists every demo with its commands** —
   keep it updated when a demo is added or its flags change.
@@ -195,6 +203,7 @@ Two **`ament_cmake`** packages under `src/`:
     `localization_launch.py`, `turtle_showcase_launch.py`, `stock_include_launch.py`,
     `turtle_params_launch.py` (typed `RosParams` + the untyped lanes via `node()`), and
     `turtle_bringup_script.py` (**imperative**: `@script`, stages, graph checks, restart),
+    `turtle_checks_launch.py` (the same order **declared**: `checks.*` with `then`),
     `flaky_demo_launch.py` (a process that dies, to show the death report) and
     `tmux_demo_launch.py` (`--tmux` panes, and `window()` around an include) —
     ordinary submodules of `ros2_typed_launch_demo.launch`, importing each other directly;
@@ -239,6 +248,8 @@ tlaunch ros2_typed_launch_demo turtle_params_launch.py \
 tlaunch ros2_typed_launch_demo turtle_bringup_script.py --settle 2   # imperative script
 python3 src/ros2_typed_launch_demo/launch/turtle_bringup_script.py --no-drive   # same file, direct
 tlaunch ros2_typed_launch_demo flaky_demo_launch.py ; echo "exit: $?"   # death report, exit 1
+tlaunch ros2_typed_launch_demo turtle_checks_launch.py --expect nope  # a failing declared check
+tlaunch ros2_typed_launch_demo turtle_params_launch.py --log-level debug --log-commands
 tlaunch ros2_typed_launch_demo flaky_demo_launch.py --diagnostics    # + /diagnostics at 1 Hz
 tlaunch ros2_typed_launch_demo tmux_demo_launch.py --tmux            # a pane per process
 ./run.sh                          # same, + dashboard and log window (opens tmux if needed)

@@ -147,6 +147,7 @@ class Monitor:
     def __init__(self, *, log: bool = True):
         self.records: dict[Any, ProcessInfo] = {}
         self.shutting_down = False
+        self.failed_checks: list[str] = []
         self._listeners: list[Callable[[ProcessInfo], None]] = []
         self._log = log
 
@@ -158,7 +159,7 @@ class Monitor:
     # ----------------------------------------------------------- registration
     def handlers(self) -> list:
         """The launch actions that wire this monitor up. Put them first."""
-        from launch.actions import RegisterEventHandler
+        from launch.actions import OpaqueFunction, RegisterEventHandler
         from launch.event_handlers import (
             OnProcessExit,
             OnProcessIO,
@@ -171,6 +172,10 @@ class Monitor:
             RegisterEventHandler(OnProcessExit(on_exit=self.on_exit)),
             RegisterEventHandler(OnProcessIO(on_stdout=self.on_io, on_stderr=self.on_io)),
             RegisterEventHandler(OnShutdown(on_shutdown=self.on_shutdown)),
+            # Where a declared check (checks.py) finds us: to report a failure,
+            # and to read output a process printed before the check started.
+            OpaqueFunction(function=lambda context: context.extend_globals(
+                {"ros2_typed_launch_monitor": self})),
         ]
 
     def track(self, action, key: str | None = None) -> ProcessInfo:
@@ -188,6 +193,10 @@ class Monitor:
 
     def all(self) -> list[ProcessInfo]:
         return list(self.records.values())
+
+    def note_failed_check(self, what: str) -> None:
+        """A declared check timed out (checks.py): the run has failed."""
+        self.failed_checks.append(what)
 
     def note_stop(self, action) -> None:
         """Remember that *we* asked this process to stop, so its death is expected."""
@@ -250,9 +259,13 @@ class Monitor:
     def summary(self) -> str:
         """A closing report, or "" when everything behaved."""
         deaths = self.deaths()
+        lines = []
+        if self.failed_checks:
+            lines.append(f"{len(self.failed_checks)} check(s) failed:")
+            lines += [f"  {what}" for what in self.failed_checks]
         if not deaths:
-            return ""
-        lines = [f"{len(deaths)} process(es) died unexpectedly:"]
+            return "\n".join(lines)
+        lines.append(f"{len(deaths)} process(es) died unexpectedly:")
         lines += [
             f"  {info.label}: {info.why()} [pid {info.pid}]"
             + (f"\n    cmd: {' '.join(info.cmd)}" if info.cmd else "")

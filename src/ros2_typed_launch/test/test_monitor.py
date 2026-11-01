@@ -147,8 +147,15 @@ def test_reporting(capsys):
     from launch.actions import RegisterEventHandler
 
     handlers = mon.Monitor(log=False).handlers()
-    assert len(handlers) == 4
-    assert all(isinstance(h, RegisterEventHandler) for h in handlers)
+    assert len(handlers) == 5
+    assert all(isinstance(h, RegisterEventHandler) for h in handlers[:4])
+
+    # A failed declared check (checks.py) fails the run like a death does.
+    monitor = mon.Monitor(log=False)
+    monitor.note_failed_check("node '/x', not after 2s")
+    assert monitor.summary() == "1 check(s) failed:\n  node '/x', not after 2s"
+    assert mon.report(monitor, 0) == 1
+    assert "check(s) failed" in capsys.readouterr().err
 
 
 # --------------------------------------------------------------- diagnostics

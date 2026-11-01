@@ -28,6 +28,7 @@ install(DIRECTORY stock_launch/ DESTINATION share/${PROJECT_NAME}/launch)
 # Stubs in share/ so stock launch can run and include these typed launches:
 # `ros2 launch ros2_typed_launch_demo turtle_demo_launch.py turtlesim.namespace:=a`.
 ros2_typed_launch_install_stubs(${PROJECT_NAME}.launch
-  turtle_demo_launch turtle_params_launch turtle_teleop_launch localization_launch)
+  turtle_demo_launch turtle_params_launch turtle_teleop_launch localization_launch
+  turtle_checks_launch)
 
 ament_package()

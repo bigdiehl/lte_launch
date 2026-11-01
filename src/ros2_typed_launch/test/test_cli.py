@@ -107,6 +107,19 @@ def test_help_and_schema(sample_launch, capsys):
     assert "[required]" in out and "[default: 0.9]" in out
     assert "(repeatable)" in out
     assert "robots (robot)" in out.replace("\n", " ") or "robots" in out  # epilog
+    # The launch's own arguments come first, then tlaunch's, in three groups.
+    assert out.index("planner  [Planner]") < out.index("tlaunch: config") \
+        < out.index("tlaunch: running") < out.index("tlaunch: tmux")
+
+    # tlaunch's options are exactly the ones target splitting knows about.
+    parser = argparse.ArgumentParser()
+    cli.add_own_args(parser)
+    assert {o for a in parser._actions for o in a.option_strings} == cli.RESERVED
+
+    # No launch given: the general help still lists every option.
+    assert cli.main(["-h"]) == 0
+    out = capsys.readouterr().out
+    assert "tlaunch: tmux" in out and "--log-level" in out and "examples:" in out
 
     code, out, _ = run([sample_launch, "--schema"], capsys)
     assert code == 0 and "map" in json.loads(out)["properties"]

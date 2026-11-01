@@ -27,6 +27,7 @@ no display, `export QT_QPA_PLATFORM=offscreen` first.
 | `stock_include_launch.py` | including a **traditional** (untyped) `.launch.py` file |
 | `stock_launch/stock_parent.launch.xml` | the other way: a **stock** launch file including a typed one |
 | `turtle_bringup_script.py` | **imperative** launching: start, wait, check, restart, stop, in order |
+| `turtle_checks_launch.py` | the same order **declared** in a plain launch: checks with `then` |
 | `flaky_demo_launch.py` | what happens when a process dies: the error, the summary, the exit code |
 | `tmux_demo_launch.py` | `--tmux`: a pane per process, windows to group an include, `--tmux-dash` dashboard (or `./run.sh`) |
 
@@ -130,6 +131,16 @@ so stock launch finds them. Each field is a launch argument; `tlaunch_config` ta
 ros2 launch ros2_typed_launch_demo stock_parent.launch.xml
 ros2 launch ros2_typed_launch_demo turtle_demo_launch.py -s          # the arguments
 ros2 launch ros2_typed_launch_demo turtle_demo_launch.py turtlesim.namespace:=a teleop.enabled:=false
+```
+
+### turtle_checks_launch.py — declared checks
+
+The driver starts only once turtlesim is in the ROS graph; the run fails if the driver never
+prints `publishing`. A failed check is an error line, a summary entry and exit 1.
+
+```bash
+tlaunch ros2_typed_launch_demo turtle_checks_launch.py ; echo "exit: $?"
+tlaunch ros2_typed_launch_demo turtle_checks_launch.py --expect nope --timeout 4 ; echo "exit: $?"
 ```
 
 ### turtle_bringup_script.py — imperative launching

@@ -3,7 +3,7 @@
 `ros2_typed_launch` gives ROS 2 typed, schema-driven launch files: a Pydantic model is the
 interface of a launch, and the `tlaunch` command turns it into a command line, YAML config
 layering and validation. A launch can also be an imperative **script** that starts things, waits
-for them and stops them in order. Status: **working prototype**, Jazzy, 60 tests,
+for them and stops them in order. Status: **working prototype**, Jazzy, 64 tests,
 `ament_cmake`.
 
 ## Quick start (run the demo)

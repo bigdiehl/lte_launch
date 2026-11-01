@@ -48,6 +48,8 @@ Status tags on open questions: **OPEN** (needs a decision) · **PARTLY** (part b
 | Imperative launching | `@script(config=...)` + a `Session`: the service owns the main thread, the script runs on a worker. `session.start()` returns a **stage handle** you drill into (`stage["planner"]`); Ctrl-C makes the current wait raise so the script's `finally` runs; the session always stops what it started; runnable as `tlaunch <pkg> <file>` **and** `python3 <file>`. Built — Q26 |
 | tmux panes | `--tmux` runs each process in its own pane; `--tmux-only GLOB` picks some. **Launch keeps owning the process**: it runs `tlaunch-pane`, which runs the real command in a pane and ends exactly as it did, so pids, signals and exit codes are unchanged. Grouping (e.g. an include into one window) is by environment variable, via `window(name, actions)`. A pane gives a **real TTY**, which stock launch cannot. The pane's output is copied back to the shim's stdout (`lte-run --tee`), so launch's log files, the death report and `wait_output()` still see it; only the terminal echo is dropped (the pane is where it is read). Built — Q28 |
 | tmux dashboard | `--tmux-dash` opens libtmux_easy's `lte-dash` over the run: home = the run's own output, sidebar status from pane options, stop/shutdown through launch. `--tmux-logs` adds a `/rosout` viewer window, toggled with `prefix v`. Keys are borrowed for the run (`lte-key`), never put in `~/.tmux.conf`. Built — Q29 |
+| declared checks | `checks.node/topic/output(..., then=[...])`: a launch action that waits in launch's loop and starts `then` once it passes. A timeout is an error, a summary line, a non-zero exit, and by default a shutdown. Built — Q30 |
+| command lines | `--log-level` gives every ROS node `--ros-args --log-level`; `--log-commands` logs each final command. Same `Executable.prepare` hook as tmux, installed first. Built — Q31 |
 | License | Not a concern for now |
 
 ## Open questions
@@ -718,6 +720,42 @@ to switch to it and back.
 * rerun from the sidebar for session scripts (a stage *can* restart; a launch action cannot).
 * non-pane processes are not listed in the sidebar (their output is in home).
 * `--tmux-attach`, to attach from tlaunch rather than printing the command.
+
+### Declared checks in a plain launch (Q30) — BUILT (2026-11-01)
+
+A script can wait for a node, a topic or a line of output; a plain launch could not. Now it can,
+declaratively (`checks.py`, demo `turtle_checks_launch.py`):
+
+```python
+checks.node("/demo/turtlesim", timeout=10, then=[driver,
+    checks.output(driver, "publishing", timeout=10)])
+```
+
+* a check is an ordinary `launch.Action`: `execute()` starts an asyncio task in launch's loop
+  (nothing blocks) and returns it from `get_asyncio_future()`, so launch waits for it.
+* `then` actions run on a `CheckDone(passed=True)` event (`EventHandler`, `handle_once`).
+  Stock `OpaqueCoroutine` cannot return actions, hence our own action.
+* graph checks use launch_ros's per-launch node (`get_ros_node(context)`), filtering it out
+  of the node list. No second rclpy context.
+* failure: `[ERROR] [tlaunch]: check failed: ...`, recorded on the monitor (summary, exit 1),
+  then `Shutdown` unless `on_fail="continue"`. The monitor puts itself in the context's
+  globals (`ros2_typed_launch_monitor`); that is also how an output check sees lines printed
+  before it started.
+* under stock `ros2 launch` checks run the same; only the summary and exit code are missing.
+* not a package-level export (`from ros2_typed_launch import checks` imports the submodule):
+  `checks.py` needs `launch` at import time, and the package must import without ROS.
+
+### Node log levels and command lines (Q31) — BUILT (2026-11-01)
+
+`--log-level LEVEL|LOGGER:=LEVEL` (repeatable) appends `--ros-args --log-level ...` to every
+`launch_ros` `Node`'s final command; plain processes are untouched. `--log-commands` logs each
+final command line (`[INFO] [tlaunch]: turtlesim_node-1: ...`). Both hook `Executable.prepare`
+(`commands.py`), installed before `tmux.patch` so the logged command is the real one, not the
+pane stand-in. This is the "log final command lines" TODO; stock `--print` (print the
+description and exit) is a different thing and not copied.
+
+`-h` reorganised: the launch's arguments first, then tlaunch's own in three groups (config,
+running, tmux) with one-line help. `tlaunch -h` with no launch lists every option and examples.
 
 ### Packaging and invocation (Q12) — PARTLY
 

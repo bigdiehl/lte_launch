@@ -28,6 +28,7 @@ from typing import Any
 
 import yaml
 
+from . import commands
 from . import config as cfg
 from . import effective
 from . import loader
@@ -39,8 +40,8 @@ from .core import TypedLaunch, TypedScript, TypedTarget
 PROG = "tlaunch"
 WARN = f"{PROG}: warning:"
 USAGE = (
-    f"{PROG} [launch options] <package> <file> [launch arguments]\n"
-    f"       {PROG} [launch options] <path/to/standalone_launch.py> [launch arguments]"
+    f"{PROG} [tlaunch options] <package> <file> [arguments]\n"
+    f"       {PROG} [tlaunch options] <path/to/standalone_launch.py> [arguments]"
 )
 
 # tlaunch's own options; schema fields must not collide with these. Every option
@@ -48,12 +49,12 @@ USAGE = (
 # can never collide with a schema field (Q18).
 OWN_WITH_VALUE = {
     "--config", "--launch-prefix", "--launch-prefix-filter",
-    "--ros-param", "--ros-remap", "--tmux-only", "--tmux-session",
+    "--ros-param", "--ros-remap", "--tmux-only", "--tmux-session", "--log-level",
 }
 OWN_FLAGS = {
     "-h", "--help", "--schema", "--show-config",
     "-n", "--noninteractive", "-d", "--debug", "--strict", "--diagnostics",
-    "--tmux", "--tmux-dash", "--tmux-logs",
+    "--tmux", "--tmux-dash", "--tmux-logs", "--log-commands",
 }
 RESERVED = OWN_WITH_VALUE | OWN_FLAGS
 
@@ -207,10 +208,11 @@ def add_schema_args(parser: argparse.ArgumentParser, model: type):
 
         owner_path = spec.path[:-1]
         if owner_path not in groups:
-            title = ".".join(owner_path) or "(top level)"
+            title = ".".join(owner_path) or "arguments"
             groups[owner_path] = parser.add_argument_group(
                 f"{title}  [{spec.owner.__name__}]",
-                _esc(schema.summary(spec.owner)) or None,
+                # The top level's summary is already the help's description.
+                (_esc(schema.summary(spec.owner)) or None) if owner_path else None,
             )
         group = groups[owner_path]
 
@@ -250,21 +252,53 @@ def add_schema_args(parser: argparse.ArgumentParser, model: type):
 
 
 def add_own_args(parser: argparse.ArgumentParser):
-    g = parser.add_argument_group("launch options (tlaunch itself)")
+    """tlaunch's own options, in three groups, after the launch's arguments."""
+    g = parser.add_argument_group("tlaunch: config")
     g.add_argument(
         "--config", action="append", default=[], metavar="FILE", dest="$config",
-        help="YAML config file, or <package>:<path> for a file in a package's "
-        "share directory; repeatable, later files override earlier ones "
-        "(deep merge, lists are replaced); command line flags override all files",
+        help="YAML config file, or <package>:<path>. Repeatable; later files win "
+        "(deep merge, lists replaced), flags win over all files",
+    )
+    g.add_argument(
+        "--show-config", action="store_true", dest="$show_config",
+        help="print the effective config, each value with its source, and exit",
     )
     g.add_argument(
         "--schema", action="store_true", dest="$schema",
         help="print the JSON Schema of this launch's config and exit",
     )
     g.add_argument(
-        "--show-config", action="store_true", dest="$show_config",
-        help="print the effective config with the source of each value, "
-        "and exit without launching",
+        "--ros-param", action="append", default=[], dest="$ros_param",
+        metavar=ROS_CLI_SHAPE["param"],
+        help="set a ROS parameter on the nodes matching PATTERN (/**, /**/planner, "
+        "/ns/*; default /**). Value parsed as YAML. Repeatable",
+    )
+    g.add_argument(
+        "--ros-remap", action="append", default=[], dest="$ros_remap",
+        metavar=ROS_CLI_SHAPE["remap"],
+        help="remap a name on the nodes matching PATTERN (default /**). Repeatable",
+    )
+    g.add_argument(
+        "--strict", action="store_true", dest="$strict",
+        help="refuse untyped ROS parameters and remappings; config warnings "
+        "become errors",
+    )
+
+    g = parser.add_argument_group("tlaunch: running")
+    g.add_argument(
+        "--log-level", action="append", default=[], dest="$log_level",
+        metavar="LEVEL",
+        help="log level of every ROS node: debug, info, warn, error, fatal; or "
+        "LOGGER:=LEVEL for one logger. Repeatable",
+    )
+    g.add_argument(
+        "--log-commands", action="store_true", dest="$log_commands",
+        help="log each process's final command line as it starts",
+    )
+    g.add_argument(
+        "-d", "--debug", action="store_true", dest="$debug",
+        help="launch's debug output, Python tracebacks, and advisory config "
+        "warnings",
     )
     g.add_argument(
         "-n", "--noninteractive", action="store_true", dest="$noninteractive",
@@ -272,73 +306,41 @@ def add_own_args(parser: argparse.ArgumentParser):
         help="run without a terminal (default when stdin is not a tty)",
     )
     g.add_argument(
-        "-d", "--debug", action="store_true", dest="$debug",
-        help="verbose launch output, Python tracebacks, and advisory config "
-        "warnings (a node pattern that matched nothing, a typed field shadowing "
-        "an untyped one)",
-    )
-    g.add_argument(
         "--launch-prefix", metavar="CMD", dest="$launch_prefix",
-        help="prefix command for all executables",
+        help="prefix command for every executable (gdb -ex run --args, ...)",
     )
     g.add_argument(
         "--launch-prefix-filter", metavar="REGEX", dest="$launch_prefix_filter",
-        help="only apply --launch-prefix to executables matching this regex",
-    )
-    g.add_argument(
-        "--ros-param", action="append", default=[], dest="$ros_param",
-        metavar=ROS_CLI_SHAPE["param"],
-        help="set a ROS parameter on the nodes matching PATTERN (a node pattern "
-        "like /**, /**/planner or /ns/*; default /**); values are parsed as "
-        "YAML; repeatable, and overrides --config files",
-    )
-    g.add_argument(
-        "--ros-remap", action="append", default=[], dest="$ros_remap",
-        metavar=ROS_CLI_SHAPE["remap"],
-        help="remap a topic/service on the nodes matching PATTERN (default /**); "
-        "repeatable. ROS itself cannot do this with a wildcard; tlaunch matches "
-        "the pattern and passes each node concrete rules",
+        help="only apply --launch-prefix to executables matching REGEX",
     )
     g.add_argument(
         "--diagnostics", action="store_true", dest="$diagnostics",
-        help="publish one diagnostic_msgs/DiagnosticStatus per launched process "
-        "on /diagnostics (~1 Hz), ERROR once a process dies; needs a ROS node "
-        "inside the launch, so it is off by default. Tracking, the error line "
-        "and the end-of-run summary happen either way",
+        help="publish each process's status on /diagnostics (~1 Hz)",
     )
+
+    g = parser.add_argument_group("tlaunch: tmux")
     g.add_argument(
         "--tmux", action="store_true", dest="$tmux",
-        help="run each process in its own tmux pane instead of merging all "
-        "their output into this terminal. Needs tmux; joins the session "
-        "tlaunch is in, if it is in one, and opens one otherwise",
+        help="run each process in its own tmux pane (joins the current session, "
+        "or opens one)",
     )
     g.add_argument(
         "--tmux-only", action="append", default=[], dest="$tmux_only",
         metavar="GLOB",
-        help="put only the processes matching GLOB in panes (implies --tmux); "
-        "matched against the process name and the node's full name, so "
-        "'turtlesim*' and '/demo/*' both work. Repeatable",
+        help="only processes matching GLOB, by process name or node FQN "
+        "('turtlesim*', '/demo/*'). Repeatable",
     )
     g.add_argument(
         "--tmux-dash", action="store_true", dest="$tmux_dash",
-        help="add a dashboard window (libtmux_easy's lte-dash): every pane "
-        "with its status, and a home page with this run's own output "
-        "(implies --tmux)",
+        help="add a dashboard window: every pane with its status (lte-dash)",
     )
     g.add_argument(
         "--tmux-logs", action="store_true", dest="$tmux_logs",
-        help="add a window running the /rosout log viewer, ros2-log-view "
-        "(implies --tmux)",
+        help="add a window with the /rosout log viewer (ros2-log-view)",
     )
     g.add_argument(
         "--tmux-session", dest="$tmux_session", metavar="NAME",
-        help="use this tmux session instead of choosing a name (implies "
-        "--tmux). It is joined if it exists; nothing in it is ever killed",
-    )
-    g.add_argument(
-        "--strict", action="store_true", dest="$strict",
-        help="refuse untyped ROS parameters and remappings, and make every "
-        "config warning an error: the schema must then describe everything",
+        help="use this session; joined if it exists, nothing in it is killed",
     )
 
 
@@ -354,8 +356,9 @@ def build_parser(label: str, typed: TypedTarget, *, direct: bool = False):
         description=_esc(f"{label}\n{summary}".strip()),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    add_own_args(parser)
+    # The launch's own arguments first: they are what -h is usually for.
     skipped = add_schema_args(parser, typed.config_type)
+    add_own_args(parser)
     if skipped:
         names = ", ".join(f"{s.dotted} ({s.type_name.lower()})" for s in skipped)
         parser.epilog = _esc(
@@ -652,11 +655,19 @@ def run_script(typed: TypedScript, config: Any, own: dict[str, Any],
 
 
 def print_general_help() -> None:
-    print(
-        f"usage: {USAGE}\n\n"
-        "Run a typed launch file. Give a launch first, then add -h to see\n"
-        "the options generated from its config schema."
+    parser = argparse.ArgumentParser(
+        prog=PROG, usage=USAGE, add_help=False,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Run a typed launch file. Give the launch, then -h for the "
+        "options generated\nfrom its config schema.",
+        epilog=f"""examples:
+  {PROG} my_pkg my_launch.py -h
+  {PROG} my_pkg my_launch.py --config my_pkg:config/site.yaml --robot.name r2
+  {PROG} my_pkg my_launch.py --show-config
+  {PROG} my_pkg my_launch.py --tmux-dash""",
     )
+    add_own_args(parser)
+    parser.print_help()
 
 
 def configure(typed: TypedTarget, files: list[str], cli: dict[str, Any], own: dict,
@@ -709,6 +720,11 @@ def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
     own = {k[1:]: ns.pop(k) for k in list(ns) if k.startswith("$")}
     files = own["config"]
 
+    try:
+        own["log_level"] = commands.check_levels(own["log_level"])
+    except ValueError as exc:
+        raise TlaunchError(str(exc)) from None
+
     if own["schema"]:
         print(json.dumps(schema.json_schema(typed.config_type), indent=2))
         return 0
@@ -727,10 +743,16 @@ def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
         )
         return 0
 
-    with panes_for(own, target):
-        if isinstance(typed, TypedScript):
-            return run_script(typed, config, own, ros, sources, label)
-        return run_launch(typed, config, own, ros, sources, label)
+    # The command-line hook goes in before the panes' one, so it sees (and
+    # logs) the real command rather than its pane stand-in.
+    undo = commands.patch(own["log_level"], own["log_commands"])
+    try:
+        with panes_for(own, target):
+            if isinstance(typed, TypedScript):
+                return run_script(typed, config, own, ros, sources, label)
+            return run_launch(typed, config, own, ros, sources, label)
+    finally:
+        undo()
 
 
 def main(argv: list[str] | None = None, *, target: TypedTarget | None = None) -> int:

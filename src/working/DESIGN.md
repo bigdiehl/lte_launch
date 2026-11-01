@@ -50,6 +50,8 @@ owns the main thread, the script runs on a worker and drives it through stage ha
 | `cli.py` | The command: parser, layering (`configure`), `--show-config`, running a launch or a script |
 | `stock.py` | A typed launch as a stock `LaunchDescription` (`generate_launch_description`) |
 | `session.py` | `Session`/`Stage`/`Process`: start, wait (process, output, ROS graph), stop, restart |
+| `checks.py` | Declared checks: `node`/`topic`/`output` actions with `then` (Q30) |
+| `commands.py` | Final command lines: `--log-level` for nodes, `--log-commands` (Q31) |
 | `monitor.py` | Every process's pid/status/output tail; the death report; `/diagnostics` |
 | `tmux.py` | Session/windows for panes; the `Executable.prepare` hook; `off_screen` |
 | `dashboard.py` | `--tmux-dash`: status file, control socket, home log (`HomeTee`) |
