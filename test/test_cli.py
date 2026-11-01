@@ -38,7 +38,7 @@ def show(launch_file, extra, capsys):
         # A line with a value is a leaf (collections are emitted in flow style,
         # so they stay on one line); a bare "key:" opens a nested model.
         if value.strip():
-            dotted = ".".join(stack[1:])        # drop the launch_args/pattern root
+            dotted = ".".join(stack[1:])  # drop the launch_args/pattern root
             values[dotted] = json.loads(value.strip())
             sources[dotted] = note.strip()
     return values, sources
@@ -47,25 +47,34 @@ def show(launch_file, extra, capsys):
 # ------------------------------------------------------------------ targets
 def test_split_target_and_completion(sample_launch, fake_package, monkeypatch):
     assert cli.split_target([sample_launch, "--map", "m.yaml"]) == (
-        [sample_launch], ["--map", "m.yaml"],
+        [sample_launch],
+        ["--map", "m.yaml"],
     )
     assert cli.split_target(["pkg", "x_launch", "--a.b", "1"]) == (
-        ["pkg", "x_launch"], ["--a.b", "1"],
+        ["pkg", "x_launch"],
+        ["--a.b", "1"],
     )
     # tlaunch's own options may appear before or between the target's parts.
-    assert cli.split_target(["--config", "c.yaml", "-d", "pkg", "--schema", "x_launch"]) == (
-        ["pkg", "x_launch"], ["--config", "c.yaml", "-d", "--schema"],
+    assert cli.split_target(
+        ["--config", "c.yaml", "-d", "pkg", "--schema", "x_launch"]
+    ) == (
+        ["pkg", "x_launch"],
+        ["--config", "c.yaml", "-d", "--schema"],
     )
     # ...but the target must end before the first schema flag.
     assert cli.split_target(["pkg", "--x", "1", "x_launch"]) == (
-        ["pkg"], ["--x", "1", "x_launch"],
+        ["pkg"],
+        ["--x", "1", "x_launch"],
     )
 
     # Completions are full filenames (".py" included), matching what tlaunch
     # now requires you to type.
     parsed_args = argparse.Namespace(package=fake_package)
     assert set(cli._complete_launch_file("", parsed_args)) == {
-        "child_launch.py", "main_launch.py", "nested_launch.py", "not_a_launch.py",
+        "child_launch.py",
+        "main_launch.py",
+        "nested_launch.py",
+        "not_a_launch.py",
     }
 
     pytest.importorskip("ament_index_python")
@@ -100,16 +109,20 @@ def test_help_and_schema(sample_launch, capsys):
     assert exc.value.code == 0
     out = capsys.readouterr().out
     assert "robot  [Robot]" in out and "planner  [Planner]" in out
-    assert "--planner.max_iterations" in out          # snake_case, dotted
+    assert "--planner.max_iterations" in out  # snake_case, dotted
     assert "--robot.use_sim_time, --no-robot.use_sim_time" in out
-    assert "{navfn|smac}" in out                       # Literal -> choices
-    assert "(>=1, <=100000)" in out                    # bounds shown
+    assert "{navfn|smac}" in out  # Literal -> choices
+    assert "(>=1, <=100000)" in out  # bounds shown
     assert "[required]" in out and "[default: 0.9]" in out
     assert "(repeatable)" in out
     assert "robots (robot)" in out.replace("\n", " ") or "robots" in out  # epilog
     # The launch's own arguments come first, then tlaunch's, in three groups.
-    assert out.index("planner  [Planner]") < out.index("tlaunch: config") \
-        < out.index("tlaunch: running") < out.index("tlaunch: tmux")
+    assert (
+        out.index("planner  [Planner]")
+        < out.index("tlaunch: config")
+        < out.index("tlaunch: running")
+        < out.index("tlaunch: tmux")
+    )
 
     # tlaunch's options are exactly the ones target splitting knows about.
     parser = argparse.ArgumentParser()
@@ -130,7 +143,7 @@ def test_layering_defaults_files_then_cli(
     sample_launch, capsys, write, tmp_path, monkeypatch
 ):
     values, sources = show(sample_launch, ["--map", "m"], capsys)
-    assert values["planner.tolerance"] == 0.9          # Planner(tolerance=0.9)
+    assert values["planner.tolerance"] == 0.9  # Planner(tolerance=0.9)
     assert values["planner.algorithm"] == "smac"
     assert sources["planner.tolerance"] == "default"
     assert sources["map"] == "cli"
@@ -139,7 +152,7 @@ def test_layering_defaults_files_then_cli(
     b = write("b.yaml", "robot: {name: bob}\n")
     values, sources = show(sample_launch, ["--config", a, "--config", b], capsys)
     assert values["robot.name"] == "bob" and sources["robot.name"] == b
-    assert values["robot.use_sim_time"] is True        # deep merge keeps a's value
+    assert values["robot.use_sim_time"] is True  # deep merge keeps a's value
     assert sources["robot.use_sim_time"] == a
     assert values["map"] == "from_a"
 
@@ -163,7 +176,7 @@ def test_layering_defaults_files_then_cli(
     monkeypatch.setattr(config, "_package_share_dir", lambda pkg: str(share))
     values, sources = show(sample_launch, ["--config", "mypkg:config/c.yaml"], capsys)
     assert values["map"] == "pkg_map"
-    assert sources["map"] == "mypkg:config/c.yaml"     # shown as typed
+    assert sources["map"] == "mypkg:config/c.yaml"  # shown as typed
 
 
 # -------------------------------------------------------------- collections
@@ -171,11 +184,11 @@ def test_collection_flags(sample_launch, write, capsys):
     a = write("a.yaml", "map: m\ntags: [a, b]\n")
     b = write("b.yaml", "tags: [c]\n")
     values, _ = show(sample_launch, ["--config", a, "--config", b], capsys)
-    assert values["tags"] == ["c"]                     # later file replaces
+    assert values["tags"] == ["c"]  # later file replaces
     values, _ = show(
         sample_launch, ["--config", a, "--tags", "x", "--tags", "y"], capsys
     )
-    assert values["tags"] == ["x", "y"]                # CLI replaces files
+    assert values["tags"] == ["x", "y"]  # CLI replaces files
 
     a = write("a.yaml", "map: m\nparams: {p: 1, q: 2}\nremap: {/a: /b}\n")
     values, _ = show(
@@ -184,7 +197,7 @@ def test_collection_flags(sample_launch, write, capsys):
         capsys,
     )
     assert values["params"] == {"p": 1, "q": 3, "r": True}  # untyped -> YAML inference
-    assert values["remap"] == {"/a": "/b", "/c": "/d"}      # typed str stays a string
+    assert values["remap"] == {"/a": "/b", "/c": "/d"}  # typed str stays a string
 
     values, _ = show(sample_launch, ["--map", "m", "--remap", "/a=/b=c"], capsys)
     assert values["remap"] == {"/a": "/b=c"}
@@ -210,8 +223,15 @@ def test_bad_values_are_reported_before_anything_starts(
     assert code == 2 and "--map: required" in err and "--config" in err
 
     code, _, err = run(
-        [sample_launch, "--map", "m", "--planner.max_iterations", "999999",
-         "--planner.tolerance", "-1"],
+        [
+            sample_launch,
+            "--map",
+            "m",
+            "--planner.max_iterations",
+            "999999",
+            "--planner.tolerance",
+            "-1",
+        ],
         capsys,
     )
     assert code == 2
@@ -227,7 +247,9 @@ def test_bad_values_are_reported_before_anything_starts(
         cli.main([sample_launch, "--map", "m", "--planer.tolerance", "1"])
     assert exc.value.code == 2
 
-    code, _, err = run([sample_launch, "--config", "./nope.yaml", "--show-config"], capsys)
+    code, _, err = run(
+        [sample_launch, "--config", "./nope.yaml", "--show-config"], capsys
+    )
     assert code == 2 and "cannot read config file" in err
 
     path = tmp_path / "c_launch.py"
@@ -257,7 +279,7 @@ def test_launch_args_is_checked_against_the_schema_but_node_sections_are_not(
         raw=True,
     )
     code, _, err = run([sample_launch, "--config", good, "--show-config"], capsys)
-    assert code == 0 and err == ""          # the untyped lanes are never checked
+    assert code == 0 and err == ""  # the untyped lanes are never checked
 
     for text, expected in [
         ("map: m\nnot_a_field: 1\n", "not_a_field: unknown key"),
@@ -300,7 +322,7 @@ def test_substitutions_and_var(sample_launch, write, capsys, monkeypatch):
     assert "$(var robo.name): not an argument of this launch" in err
     assert "did you mean 'robot.name'" in err
     assert "written for another launch" in err  # both kinds at once says why
-    assert "cannot expand" not in err          # nothing was expanded
+    assert "cannot expand" not in err  # nothing was expanded
 
     code, _, err = run(
         [sample_launch, "--map", "m", "--ros-param", "t=$(var nope)", "--show-config"],
@@ -405,7 +427,15 @@ def test_ros_params_and_remaps(sample_launch, write, capsys):
     assert code == 0 and "matched no node" in err and "/nope/x" in err
 
     code, _, err = run(
-        [sample_launch, "--map", "m", "--strict", "--ros-param", "a=1", "--show-config"],
+        [
+            sample_launch,
+            "--map",
+            "m",
+            "--strict",
+            "--ros-param",
+            "a=1",
+            "--show-config",
+        ],
         capsys,
     )
     assert code == 2
@@ -455,8 +485,14 @@ def test_effective_config(sample_launch, write, capsys, tmp_path):
         raw=True,
     )
     _, out, _ = run(
-        [sample_launch, "--config", path, "--ros-param", "use_sim_time=true",
-         "--show-config"],
+        [
+            sample_launch,
+            "--config",
+            path,
+            "--ros-param",
+            "use_sim_time=true",
+            "--show-config",
+        ],
         capsys,
     )
     assert out.count('"/**":') == 1
@@ -471,5 +507,3 @@ def test_effective_config(sample_launch, write, capsys, tmp_path):
     assert Path(path).read_text() == text
     # Named after the launch, so two runs of different launches don't collide.
     assert "pkg_some_launch_py" in path and path.endswith(".yaml")
-
-

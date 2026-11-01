@@ -16,9 +16,7 @@ class LocalizationConfig(BaseModel):
     odom_frame: str = Field("odom", description="Child frame id")
     x: float = Field(0.0, description="Translation along x (m)")
     y: float = Field(0.0, description="Translation along y (m)")
-    yaw: float = Field(
-        0.0, ge=-3.15, le=3.15, description="Rotation about z (rad)"
-    )
+    yaw: float = Field(0.0, ge=-3.15, le=3.15, description="Rotation about z (rad)")
 
 
 @launch(config=LocalizationConfig)
@@ -30,11 +28,16 @@ def localization(config: LocalizationConfig):
             name="map_to_odom",
             namespace=config.namespace,
             arguments=[
-                "--x", str(config.x),
-                "--y", str(config.y),
-                "--yaw", str(config.yaw),
-                "--frame-id", config.map_frame,
-                "--child-frame-id", config.odom_frame,
+                "--x",
+                str(config.x),
+                "--y",
+                str(config.y),
+                "--yaw",
+                str(config.yaw),
+                "--frame-id",
+                config.map_frame,
+                "--child-frame-id",
+                config.odom_frame,
             ],
         )
     ]

@@ -124,24 +124,32 @@ def log():
 def env_args() -> list[str]:
     """This process's environment as tmux ``-e NAME=VALUE`` arguments: a
     pane's process is forked by the tmux server and would get its own."""
-    return [part for name, value in os.environ.items()
-            for part in ("-e", f"{name}={value}")]
+    return [
+        part for name, value in os.environ.items() for part in ("-e", f"{name}={value}")
+    ]
 
 
 def session_exists(name: str) -> bool:
-    return subprocess.run(("tmux", "has-session", "-t", f"={name}"),
-                          capture_output=True).returncode == 0
+    return (
+        subprocess.run(
+            ("tmux", "has-session", "-t", f"={name}"), capture_output=True
+        ).returncode
+        == 0
+    )
 
 
-def pane_rows(session: str, extra: tuple[str, ...] = ()
-              ) -> list[tuple[str, str, dict[str, str]]]:
+def pane_rows(
+    session: str, extra: tuple[str, ...] = ()
+) -> list[tuple[str, str, dict[str, str]]]:
     """(pane id, pane_dead, values) for every pane in the session. 'values'
     holds the `FIELDS` options tlaunch-pane recorded, plus the 'extra' tmux
     formats (``pane_dead_status``) under their own names."""
     keys = FIELDS + extra
-    fmt = "\t".join(["#{pane_id}", "#{pane_dead}"]
-                    + [f"#{{{OPTION_PREFIX}{f}}}" for f in FIELDS]
-                    + [f"#{{{f}}}" for f in extra])
+    fmt = "\t".join(
+        ["#{pane_id}", "#{pane_dead}"]
+        + [f"#{{{OPTION_PREFIX}{f}}}" for f in FIELDS]
+        + [f"#{{{f}}}" for f in extra]
+    )
     out = tmux("list-panes", "-s", "-t", f"={session}:", "-F", fmt, check=False)
     rows = []
     for line in out.split("\n"):
@@ -162,8 +170,10 @@ def current_session() -> str | None:
     pane = os.environ.get("TMUX_PANE")
     if not os.environ.get("TMUX") or not pane:
         return None
-    return tmux("display-message", "-p", "-t", pane, "#{session_name}",
-                check=False) or None
+    return (
+        tmux("display-message", "-p", "-t", pane, "#{session_name}", check=False)
+        or None
+    )
 
 
 def selected(patterns, name: str, node: str | None) -> bool:
@@ -194,33 +204,45 @@ class Panes:
     the same window twice.
     """
 
-    def __init__(self, label: str, *, session: str | None = None,
-                 layout: str = LAYOUT, dash: bool = False, logs: bool = False):
+    def __init__(
+        self,
+        label: str,
+        *,
+        session: str | None = None,
+        layout: str = LAYOUT,
+        dash: bool = False,
+        logs: bool = False,
+    ):
         self.label = label or "launch"
         self.want_dash, self.want_logs = dash, logs
-        self.dash = None                       # dashboard.Dashboard, once open
-        self.extras: dict[str, str] = {}       # "dash"/"logs" -> window id
+        self.dash = None  # dashboard.Dashboard, once open
+        self.extras: dict[str, str] = {}  # "dash"/"logs" -> window id
         self.viewer: list[str] = []
         self.logs_key = os.environ.get(LOGS_KEY_ENV, LOGS_KEY) if logs else ""
         self.dash_key = os.environ.get(DASH_KEY_ENV, DASH_KEY)
-        self.borrowed = ""                     # the logs key, while borrowed
+        self.borrowed = ""  # the logs key, while borrowed
         self.wanted = session
         self.layout = layout
         self.script: str | None = None
         self.runner: str | None = None
         self.session: str | None = None
         self.joined = False
-        self.windows: dict[str, str] = {}      # grouping key -> tmux window
-        self.spare: dict[str, str] = {}        # window -> its unused first pane
+        self.windows: dict[str, str] = {}  # grouping key -> tmux window
+        self.spare: dict[str, str] = {}  # window -> its unused first pane
 
     # ------------------------------------------------------------------ setup
     def start(self) -> None:
         """Check that this can work at all, before any process is started."""
-        lte = "it comes from libtmux_easy: uv tool install --editable " \
-              "'~/projects/libtmux_easy[dash]'"
+        lte = (
+            "it comes from libtmux_easy: uv tool install --editable "
+            "'~/projects/libtmux_easy[dash]'"
+        )
         need("tmux", "install tmux")
-        self.script = need(PANE_SCRIPT, "source install/setup.bash, or rebuild "
-                           "the workspace if this is a fresh checkout")
+        self.script = need(
+            PANE_SCRIPT,
+            "source install/setup.bash, or rebuild "
+            "the workspace if this is a fresh checkout",
+        )
         self.runner = need(RUNNER, lte)
         if self.want_dash:
             from .dashboard import DASH
@@ -230,8 +252,10 @@ class Panes:
             import shlex
 
             self.viewer = shlex.split(os.environ.get(LOG_VIEWER_ENV, LOG_VIEWER))
-            need(self.viewer[0] if self.viewer else LOG_VIEWER,
-                 f"it comes from ros2-term (pipx), or set {LOG_VIEWER_ENV}")
+            need(
+                self.viewer[0] if self.viewer else LOG_VIEWER,
+                f"it comes from ros2-term (pipx), or set {LOG_VIEWER_ENV}",
+            )
         if self.logs_key:
             need(KEY_TOOL, f"{lte}; or set {LOGS_KEY_ENV}= to go without the key")
         here = current_session()
@@ -252,14 +276,36 @@ class Panes:
         if not self._session_made():
             # A session cannot be made without a window: make one to be
             # closed once the real ones exist.
-            boot = tmux("new-session", "-d", "-s", self.session, "-n", "tlaunch-boot",
-                        "-P", "-F", "#{window_id}")
+            boot = tmux(
+                "new-session",
+                "-d",
+                "-s",
+                self.session,
+                "-n",
+                "tlaunch-boot",
+                "-P",
+                "-F",
+                "#{window_id}",
+            )
         if self.want_logs:
             self.extras["logs"] = tmux(
-                "new-window", "-d", "-t", f"{self.session}:", "-n", "logs",
-                "-P", "-F", "#{window_id}", "-c", os.getcwd(), *env_args(),
-                *self.viewer)
-            tmux("set-option", "-q", "-t", self.session, LOGS_OPTION, self.extras["logs"])
+                "new-window",
+                "-d",
+                "-t",
+                f"{self.session}:",
+                "-n",
+                "logs",
+                "-P",
+                "-F",
+                "#{window_id}",
+                "-c",
+                os.getcwd(),
+                *env_args(),
+                *self.viewer,
+            )
+            tmux(
+                "set-option", "-q", "-t", self.session, LOGS_OPTION, self.extras["logs"]
+            )
             if self.logs_key:
                 self._borrow_key()
         if self.want_dash:
@@ -276,10 +322,19 @@ class Panes:
 
     def _borrow_key(self) -> None:
         result = subprocess.run(
-            [KEY_TOOL, "borrow", self.logs_key, LOGS_OPTION,
-             "--message", "no tlaunch log window in this session",
-             "--", LOGS_KEY_COMMAND],
-            capture_output=True, text=True)
+            [
+                KEY_TOOL,
+                "borrow",
+                self.logs_key,
+                LOGS_OPTION,
+                "--message",
+                "no tlaunch log window in this session",
+                "--",
+                LOGS_KEY_COMMAND,
+            ],
+            capture_output=True,
+            text=True,
+        )
         if result.returncode == 0:
             self.borrowed = self.logs_key
         else:
@@ -322,12 +377,17 @@ class Panes:
         retire = self.spare.pop(window, "")
         return [
             self.script,
-            "--window", self._target(window),
-            "--runner", self.runner,
-            "--title", title,
-            "--layout", self.layout,
+            "--window",
+            self._target(window),
+            "--runner",
+            self.runner,
+            "--title",
+            title,
+            "--layout",
+            self.layout,
             *(("--retire", retire) if retire else ()),
-            "--", *cmd,
+            "--",
+            *cmd,
         ]
 
     def holds(self, cmd: list[str]) -> bool:
@@ -357,8 +417,9 @@ class Panes:
         # The window came with a pane running a shell, which no process will
         # ever use: the shim splits off its own. Remember it, to be closed once
         # there is something real beside it (a window with no panes is gone).
-        panes = tmux("list-panes", "-t", self._target(name), "-F", "#{pane_id}",
-                     check=False).split("\n")
+        panes = tmux(
+            "list-panes", "-t", self._target(name), "-F", "#{pane_id}", check=False
+        ).split("\n")
         if panes and panes[0]:
             self.spare[name] = panes[0]
         return name
@@ -372,8 +433,14 @@ class Panes:
         if not self._session_made():
             return base
         taken = set(
-            tmux("list-windows", "-t", f"{self.session}:", "-F", "#{window_name}",
-                 check=False).split("\n")
+            tmux(
+                "list-windows",
+                "-t",
+                f"{self.session}:",
+                "-F",
+                "#{window_name}",
+                check=False,
+            ).split("\n")
         )
         for name in self._candidates(base):
             if name not in taken:
@@ -383,9 +450,14 @@ class Panes:
     # ---------------------------------------------------------------- report
     def attached(self) -> bool:
         """Is anyone looking at this session?"""
-        return tmux("list-sessions", "-F", "#{session_attached}",
-                    "-f", f"#{{==:#{{session_name}},{self.session}}}",
-                    check=False).startswith("1")
+        return tmux(
+            "list-sessions",
+            "-F",
+            "#{session_attached}",
+            "-f",
+            f"#{{==:#{{session_name}},{self.session}}}",
+            check=False,
+        ).startswith("1")
 
     def failures(self) -> int:
         """Dead panes of ours whose process did not finish cleanly.
@@ -397,8 +469,11 @@ class Panes:
         only the fallback, since tmux now and then loses it.
         """
         return sum(
-            1 for _, dead, v in pane_rows(self.session, ("pane_dead_status",))
-            if dead == "1" and v["name"] and not v["stopped"]
+            1
+            for _, dead, v in pane_rows(self.session, ("pane_dead_status",))
+            if dead == "1"
+            and v["name"]
+            and not v["stopped"]
             and (v["status"] or v["pane_dead_status"]) != "0"
         )
 
@@ -489,7 +564,9 @@ def patch(panes: Panes, only=()) -> callable:
             wrapped = panes.wrap(cmd, key, node or name)
         except TmuxError as exc:
             # A pane is a convenience; losing one is not worth losing the run.
-            log().warning(f"{name}: no tmux window ({exc}); its output stays in this log")
+            log().warning(
+                f"{name}: no tmux window ({exc}); its output stays in this log"
+            )
             return
         # final_cmd is read again when the process is actually started, so
         # replacing it here is all it takes.

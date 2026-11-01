@@ -14,8 +14,13 @@ def test_log_levels():
             commands.check_levels([bad])
     assert commands.node_args([]) == []
     assert commands.node_args(["debug", "rcl:=warn"]) == [
-        "--ros-args", "--log-level", "debug", "--log-level", "rcl:=warn"]
-    assert commands.patch([], False)() is None           # nothing to do: no hook
+        "--ros-args",
+        "--log-level",
+        "debug",
+        "--log-level",
+        "rcl:=warn",
+    ]
+    assert commands.patch([], False)() is None  # nothing to do: no hook
 
 
 def test_the_hook_reaches_nodes_only_and_logs(capsys):
@@ -26,7 +31,7 @@ def test_the_hook_reaches_nodes_only_and_logs(capsys):
 
     original = Executable.prepare
 
-    def fake_prepare(description, context, action):     # what launch would resolve
+    def fake_prepare(description, context, action):  # what launch would resolve
         description._Executable__final_cmd = ["prog", "a b"]
         description._Executable__final_name = "prog-1"
 
@@ -34,9 +39,11 @@ def test_the_hook_reaches_nodes_only_and_logs(capsys):
     try:
         undo = commands.patch(["debug"], True)
         for action, want in (
-            (Node(package="p", executable="e"), ["prog", "a b", "--ros-args",
-                                                 "--log-level", "debug"]),
-            (ExecuteProcess(cmd=["prog"]), ["prog", "a b"]),   # not a node: untouched
+            (
+                Node(package="p", executable="e"),
+                ["prog", "a b", "--ros-args", "--log-level", "debug"],
+            ),
+            (ExecuteProcess(cmd=["prog"]), ["prog", "a b"]),  # not a node: untouched
         ):
             description = Executable(cmd=["prog"])
             Executable.prepare(description, SimpleNamespace(), action)

@@ -55,7 +55,9 @@ _LOADED_BY_PATH: dict[str, TypedTarget] = {}
 def _typed_target_from_module(module, where: str) -> TypedTarget:
     entry = getattr(module, "generate_launch_description", None)
     if entry is None:
-        raise LaunchLookupError(f"'{where}' does not define generate_launch_description")
+        raise LaunchLookupError(
+            f"'{where}' does not define generate_launch_description"
+        )
     typed = getattr(entry, "typed_target", None)
     if not isinstance(typed, TypedTarget):
         raise LaunchLookupError(

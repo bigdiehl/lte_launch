@@ -56,9 +56,16 @@ class CheckDone(launch.Event):
 class Check(launch.Action):
     """Wait until ``ready(context)`` is truthy, then run ``then``."""
 
-    def __init__(self, what: str, ready: Callable[[Any], Any], *,
-                 timeout: float | None, then: list | None, on_fail: str,
-                 setup: Callable[[Any], None] | None = None):
+    def __init__(
+        self,
+        what: str,
+        ready: Callable[[Any], Any],
+        *,
+        timeout: float | None,
+        then: list | None,
+        on_fail: str,
+        setup: Callable[[Any], None] | None = None,
+    ):
         if on_fail not in ON_FAIL:
             raise ValueError(f"on_fail must be one of {ON_FAIL}, got {on_fail!r}")
         super().__init__()
@@ -74,12 +81,17 @@ class Check(launch.Action):
     def execute(self, context):
         if self._setup is not None:
             self._setup(context)
-        context.register_event_handler(launch.EventHandler(
-            matcher=lambda event: (isinstance(event, CheckDone) and event.check is self
-                                   and event.passed),
-            entities=self.then,
-            handle_once=True,
-        ))
+        context.register_event_handler(
+            launch.EventHandler(
+                matcher=lambda event: (
+                    isinstance(event, CheckDone)
+                    and event.check is self
+                    and event.passed
+                ),
+                entities=self.then,
+                handle_once=True,
+            )
+        )
         context.register_event_handler(OnShutdown(on_shutdown=self._cancel))
         self._task = context.asyncio_loop.create_task(self._run(context))
 
@@ -97,7 +109,7 @@ class Check(launch.Action):
                 if self._ready(context):
                     break
             except Exception:
-                pass            # e.g. the graph is not reachable yet: look again
+                pass  # e.g. the graph is not reachable yet: look again
             if self.timeout is not None and time.monotonic() - start >= self.timeout:
                 await self._done(context, False, f"not after {self.timeout:g}s")
                 return
@@ -125,8 +137,13 @@ def _absolute(name: str) -> str:
     return name if name.startswith("/") else f"/{name}"
 
 
-def node(name: str, *, timeout: float | None = 30.0, then: list | None = None,
-         on_fail: str = "shutdown") -> Check:
+def node(
+    name: str,
+    *,
+    timeout: float | None = 30.0,
+    then: list | None = None,
+    on_fail: str = "shutdown",
+) -> Check:
     """Wait until a node is in the ROS graph. ``name`` is fully qualified."""
     want = _absolute(name)
 
@@ -144,8 +161,14 @@ def node(name: str, *, timeout: float | None = 30.0, then: list | None = None,
     return Check(f"node '{want}'", ready, timeout=timeout, then=then, on_fail=on_fail)
 
 
-def topic(name: str, *, publishers: int = 1, timeout: float | None = 30.0,
-          then: list | None = None, on_fail: str = "shutdown") -> Check:
+def topic(
+    name: str,
+    *,
+    publishers: int = 1,
+    timeout: float | None = 30.0,
+    then: list | None = None,
+    on_fail: str = "shutdown",
+) -> Check:
     """Wait until a topic has at least ``publishers`` publishers."""
     want = _absolute(name)
 
@@ -154,12 +177,23 @@ def topic(name: str, *, publishers: int = 1, timeout: float | None = 30.0,
 
         return get_ros_node(context).count_publishers(want) >= publishers
 
-    return Check(f"topic '{want}' with {publishers} publisher(s)", ready,
-                 timeout=timeout, then=then, on_fail=on_fail)
+    return Check(
+        f"topic '{want}' with {publishers} publisher(s)",
+        ready,
+        timeout=timeout,
+        then=then,
+        on_fail=on_fail,
+    )
 
 
-def output(action, pattern: str | re.Pattern, *, timeout: float | None = 30.0,
-           then: list | None = None, on_fail: str = "shutdown") -> Check:
+def output(
+    action,
+    pattern: str | re.Pattern,
+    *,
+    timeout: float | None = 30.0,
+    then: list | None = None,
+    on_fail: str = "shutdown",
+) -> Check:
     """Wait until a process prints a line matching ``pattern`` (``re.search``).
 
     ``action`` is the process's own launch action. Lines it printed before the
@@ -178,12 +212,20 @@ def output(action, pattern: str | re.Pattern, *, timeout: float | None = 30.0,
         info = monitor.get(action) if monitor is not None else None
         if info is not None:
             lines("\n".join(info.lines))
-        context.register_event_handler(OnProcessIO(
-            target_action=action,
-            on_stdout=lambda event: lines(event.text),
-            on_stderr=lambda event: lines(event.text),
-        ))
+        context.register_event_handler(
+            OnProcessIO(
+                target_action=action,
+                on_stdout=lambda event: lines(event.text),
+                on_stderr=lambda event: lines(event.text),
+            )
+        )
 
     label = _declared_name(action) or type(action).__name__
-    return Check(f"output /{regex.pattern}/ from {label}", lambda context: seen["match"],
-                 timeout=timeout, then=then, on_fail=on_fail, setup=setup)
+    return Check(
+        f"output /{regex.pattern}/ from {label}",
+        lambda context: seen["match"],
+        timeout=timeout,
+        then=then,
+        on_fail=on_fail,
+        setup=setup,
+    )

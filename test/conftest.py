@@ -71,7 +71,7 @@ def write(tmp_path):
 
 # A launch that pulls in another module of the same fake package with a
 # relative import -- the pattern `turtle_demo_launch.py` uses for real.
-CHILD_MODULE = '''
+CHILD_MODULE = """
 from pydantic import BaseModel
 from ros2_typed_launch import launch
 
@@ -85,9 +85,9 @@ def child(config):
     return ["child-%d" % config.n]
 
 generate_launch_description = child.generate_launch_description
-'''
+"""
 
-MAIN_MODULE = '''
+MAIN_MODULE = """
 from pydantic import BaseModel
 from ros2_typed_launch import include, launch
 from .child_launch import ChildConfig, child
@@ -102,7 +102,7 @@ def main(config):
     return [include(child, ChildConfig(n=config.n))]
 
 generate_launch_description = main.generate_launch_description
-'''
+"""
 
 # Has generate_launch_description, like a stock (untyped) launch file -- but
 # no .typed_launch tag, so it is the "not a typed launch" case, not the

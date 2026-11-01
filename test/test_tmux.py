@@ -35,10 +35,10 @@ needs_runner = pytest.mark.skipif(
 
 # --------------------------------------------------------- what gets a pane
 def test_which_processes_get_a_pane():
-    assert tm.selected((), "turtlesim_node-1", "/demo/turtlesim")   # no patterns: all
+    assert tm.selected((), "turtlesim_node-1", "/demo/turtlesim")  # no patterns: all
 
     only = ("turtlesim*",)
-    assert tm.selected(only, "turtlesim_node-1", None)      # the process name
+    assert tm.selected(only, "turtlesim_node-1", None)  # the process name
     assert not tm.selected(only, "chatter-2", None)
     # launch's -N counter must not get in the way of an exact name
     assert tm.selected(("chatter",), "chatter-2", None)
@@ -50,11 +50,11 @@ def test_which_processes_get_a_pane():
 # ------------------------------------------------------ the command and label
 def test_the_wrapped_command_names_a_window_and_keeps_the_original():
     panes = tm.Panes("demo")
-    panes.script = "/usr/bin/tlaunch-pane"      # no tmux needed for this
+    panes.script = "/usr/bin/tlaunch-pane"  # no tmux needed for this
     panes.runner = "/usr/bin/lte-run"
     panes.session = "tlaunch-demo"
-    panes.windows[""] = "demo"                  # pretend the window exists
-    panes.spare["demo"] = "%0"                  # and its placeholder shell
+    panes.windows[""] = "demo"  # pretend the window exists
+    panes.spare["demo"] = "%0"  # and its placeholder shell
     wrapped = panes.wrap(["turtlesim_node", "--ros-args"], "", "/demo/turtlesim")
 
     assert wrapped[0] == panes.script
@@ -62,7 +62,7 @@ def test_the_wrapped_command_names_a_window_and_keeps_the_original():
     assert wrapped[wrapped.index("--title") + 1] == "/demo/turtlesim"
     assert wrapped[wrapped.index("--runner") + 1] == "/usr/bin/lte-run"
     # the real command survives untouched, after the -- separator
-    assert wrapped[wrapped.index("--") + 1:] == ["turtlesim_node", "--ros-args"]
+    assert wrapped[wrapped.index("--") + 1 :] == ["turtlesim_node", "--ros-args"]
     assert panes.holds(wrapped) and not panes.holds(["turtlesim_node"])
 
     # tmux will not make a window without a pane, and that pane runs a shell
@@ -88,7 +88,8 @@ def test_grouping_and_output_settings():
 
     group = window("teleop", [])
     setters = [
-        entity for entity in group.get_sub_entities()
+        entity
+        for entity in group.get_sub_entities()
         if isinstance(entity, SetEnvironmentVariable)
     ]
     assert len(setters) == 1
@@ -99,7 +100,10 @@ def test_grouping_and_output_settings():
         ("screen", {"both": {"log"}, "stdout": set(), "stderr": set()}),
         ("both", {"both": {"log"}, "stdout": set(), "stderr": set()}),
         ("log", {"both": {"log"}, "stdout": set(), "stderr": set()}),
-        ("own_log", {"both": {"own_log"}, "stdout": {"own_log"}, "stderr": {"own_log"}}),
+        (
+            "own_log",
+            {"both": {"own_log"}, "stdout": {"own_log"}, "stderr": {"own_log"}},
+        ),
     ]:
         action = ExecuteProcess(cmd=["x"], output=output)
         tm.off_screen(action, LaunchContext())
@@ -115,6 +119,7 @@ SESSION = "tlaunch-selftest"
 @pytest.fixture
 def window_target():
     """An empty tmux window to split, torn down afterwards."""
+
     def tmux(*args):
         return subprocess.run(("tmux",) + args, text=True, capture_output=True)
 
@@ -127,9 +132,20 @@ def window_target():
 
 def run_in_pane(target, *command):
     return subprocess.run(
-        [sys.executable, str(SHIM), "--window", target, "--title", "probe",
-         "--runner", shutil.which(tm.RUNNER), "--", *command],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            str(SHIM),
+            "--window",
+            target,
+            "--title",
+            "probe",
+            "--runner",
+            shutil.which(tm.RUNNER),
+            "--",
+            *command,
+        ],
+        capture_output=True,
+        text=True,
     )
 
 
@@ -137,9 +153,11 @@ def dead_pane_option(target, option, field=None) -> list[str]:
     """An option the shim wrote on its (dead) panes, for tlaunch to read; or
     any other format 'field' of them."""
     field = field or f"{tm.OPTION_PREFIX}{option}"
-    out = subprocess.run(("tmux", "list-panes", "-t", target, "-F",
-                          f"#{{pane_dead}}|#{{{field}}}"),
-                         capture_output=True, text=True).stdout
+    out = subprocess.run(
+        ("tmux", "list-panes", "-t", target, "-F", f"#{{pane_dead}}|#{{{field}}}"),
+        capture_output=True,
+        text=True,
+    ).stdout
     return [line.split("|")[1] for line in out.split("\n") if line.startswith("1|")]
 
 
@@ -153,11 +171,11 @@ def test_a_process_in_a_pane_reports_its_real_exit_code(window_target):
     for script, expected in [
         ("exit 0", 0),
         ("exit 7", 7),
-        ("exit 137", 137),         # an exit code, not a SIGKILL: no shell guessing
-        ("kill -15 $$", -15),      # launch records a signal as -N, as it would its own
+        ("exit 137", 137),  # an exit code, not a SIGKILL: no shell guessing
+        ("kill -15 $$", -15),  # launch records a signal as -N, as it would its own
     ]:
         result = run_in_pane(window_target, "sh", "-c", script)
-        assert "running it here instead" not in result.stderr   # it really used a pane
+        assert "running it here instead" not in result.stderr  # it really used a pane
         assert result.returncode == expected, script
         assert dead_pane_option(window_target, "status") == [str(expected)]
         for pane in dead_pane_option(window_target, "", field="pane_id"):
@@ -177,8 +195,18 @@ def test_a_forwarded_signal_reaches_the_command_alone(window_target, tmp_path):
         "time.sleep(30)\n"
     )
     shim = subprocess.Popen(
-        [sys.executable, str(SHIM), "--window", window_target,
-         "--runner", shutil.which(tm.RUNNER), "--", sys.executable, "-c", code],
+        [
+            sys.executable,
+            str(SHIM),
+            "--window",
+            window_target,
+            "--runner",
+            shutil.which(tm.RUNNER),
+            "--",
+            sys.executable,
+            "-c",
+            code,
+        ],
         stdout=subprocess.DEVNULL,
     )
     for _ in range(100):
@@ -200,14 +228,18 @@ def test_arguments_go_in_and_output_comes_back_intact(window_target, tmp_path):
     (the command is held until the copy is in place), without the terminal's
     colour codes, and stderr with it."""
     out = tmp_path / "out"
-    result = run_in_pane(window_target, "sh", "-c", f'printf %s "$1" > {out}',
-                         "sh", "{linear: {x: 1.2}}")
+    result = run_in_pane(
+        window_target, "sh", "-c", f'printf %s "$1" > {out}', "sh", "{linear: {x: 1.2}}"
+    )
     assert result.returncode == 0
     assert out.read_text() == "{linear: {x: 1.2}}"
 
     result = run_in_pane(
-        window_target, "sh", "-c",
-        'echo first; printf "\\033[31mred\\033[0m\\n"; echo oops >&2; echo last')
+        window_target,
+        "sh",
+        "-c",
+        'echo first; printf "\\033[31mred\\033[0m\\n"; echo oops >&2; echo last',
+    )
     assert result.stdout.splitlines() == ["first", "red", "oops", "last"]
 
 
@@ -217,19 +249,33 @@ def test_a_pane_cannot_be_had_so_the_process_runs_anyway(tmp_path):
     with this script's own pid, so launch is none the wiser."""
     marker = tmp_path / "ran"
     result = subprocess.run(
-        [sys.executable, str(SHIM), "--window", "no-such-session:no-such-window",
-         "--", "sh", "-c", f"touch {marker}; exit 5"],
-        capture_output=True, text=True,
+        [
+            sys.executable,
+            str(SHIM),
+            "--window",
+            "no-such-session:no-such-window",
+            "--",
+            "sh",
+            "-c",
+            f"touch {marker}; exit 5",
+        ],
+        capture_output=True,
+        text=True,
     )
-    assert result.returncode == 5          # the command's own code, not an error
+    assert result.returncode == 5  # the command's own code, not an error
     assert marker.exists()
     assert "running it here instead" in result.stderr
 
 
 # ------------------------------------------------------------------- the flags
 def own(**overrides):
-    flags = {"tmux": False, "tmux_only": [], "tmux_session": None,
-             "tmux_dash": False, "tmux_logs": False}
+    flags = {
+        "tmux": False,
+        "tmux_only": [],
+        "tmux_session": None,
+        "tmux_dash": False,
+        "tmux_logs": False,
+    }
     return {**flags, **overrides}
 
 
@@ -249,9 +295,11 @@ def test_the_tmux_flags():
 
     if shutil.which("tmux") is None or shutil.which(tm.RUNNER) is None:
         pytest.skip(f"tmux or {tm.RUNNER} is not installed")
-    for flags in (own(tmux=True),
-                  own(tmux_only=["turtlesim*"]),     # picking processes asks for panes
-                  own(tmux_session="mine")):         # so does naming a session
+    for flags in (
+        own(tmux=True),
+        own(tmux_only=["turtlesim*"]),  # picking processes asks for panes
+        own(tmux_session="mine"),
+    ):  # so does naming a session
         with cli.panes_for(flags, ["pkg", "demo_launch.py"]) as panes:
-            assert panes is not None                 # no session is made yet
-        assert panes.finish() == ""                  # nothing was ever opened
+            assert panes is not None  # no session is made yet
+        assert panes.finish() == ""  # nothing was ever opened

@@ -8,12 +8,12 @@ from ros2_typed_launch import ros_config as rc
 
 # ------------------------------------------------------------------ patterns
 PATTERNS = [
-    ("/**", "/talker", True),                  # ** is zero or more tokens
+    ("/**", "/talker", True),  # ** is zero or more tokens
     ("/**", "/ns/sub/talker", True),
     ("/**/planner", "/planner", True),
     ("/**/planner", "/a/b/planner", True),
-    ("/**/planner", "/planner2", False),       # not a prefix match
-    ("/ns/*", "/ns/talker", True),             # * is exactly one token
+    ("/**/planner", "/planner2", False),  # not a prefix match
+    ("/ns/*", "/ns/talker", True),  # * is exactly one token
     ("/ns/*", "/ns/sub/talker", False),
     ("/ns/*", "/other/talker", False),
     ("/ns/talker", "/ns/talker", True),
@@ -49,23 +49,27 @@ def test_parse_sections():
 
 
 def test_for_node():
-    ros = rc.RosConfig([
-        rc.Section("/**", {"a": 1, "b": 2}, {}, "first.yaml"),
-        rc.Section("/**/talker", {"b": 3}, {"/in": "/out"}, "second.yaml"),
-        rc.Section("/other", {"c": 9}, {}, "third.yaml"),
-    ])
+    ros = rc.RosConfig(
+        [
+            rc.Section("/**", {"a": 1, "b": 2}, {}, "first.yaml"),
+            rc.Section("/**/talker", {"b": 3}, {"/in": "/out"}, "second.yaml"),
+            rc.Section("/other", {"c": 9}, {}, "third.yaml"),
+        ]
+    )
     params, remaps = ros.for_node("/ns/talker")
-    assert params == {"a": 1, "b": 3}          # second.yaml wins on b
+    assert params == {"a": 1, "b": 3}  # second.yaml wins on b
     assert remaps == {"/in": "/out"}
     # Only the section that reached nothing is reported.
     assert [s.pattern for s in ros.unmatched()] == ["/other"]
 
     # No name= means rcl picks the executable's default at startup, which we
     # cannot know, so a targeted pattern must not silently apply.
-    ros = rc.RosConfig([
-        rc.Section("/**", {"a": 1}, {}, "f.yaml"),
-        rc.Section("/**/talker", {"b": 2}, {}, "f.yaml"),
-    ])
+    ros = rc.RosConfig(
+        [
+            rc.Section("/**", {"a": 1}, {}, "f.yaml"),
+            rc.Section("/**/talker", {"b": 2}, {}, "f.yaml"),
+        ]
+    )
     assert ros.for_node(None) == ({"a": 1}, {})
 
 
@@ -104,7 +108,7 @@ def test_names_handed_to_rcl_are_tidied_and_checked():
     assert rc.tidy("/demo//turtlesim") == "/demo/turtlesim"
     assert rc.tidy("///a///b//") == "/a/b"
     assert rc.tidy("/demo/") == "/demo"
-    assert rc.tidy("/") == "/"                      # the root survives
+    assert rc.tidy("/") == "/"  # the root survives
     assert rc.tidy("turtle1/cmd_vel") == "turtle1/cmd_vel"
 
     pytest.importorskip("rclpy")
@@ -118,5 +122,3 @@ def test_names_handed_to_rcl_are_tidied_and_checked():
         rc.check_name("joy vel", "a.yaml:/**.ros__remappings")
     with pytest.raises(rc.RosConfigError, match="where: '' is not a valid"):
         rc.check_name("", "where")
-
-

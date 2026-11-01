@@ -48,13 +48,30 @@ USAGE = (
 # added from here on is hyphenated, which a Python identifier cannot be, so it
 # can never collide with a schema field (Q18).
 OWN_WITH_VALUE = {
-    "--config", "--launch-prefix", "--launch-prefix-filter",
-    "--ros-param", "--ros-remap", "--tmux-only", "--tmux-session", "--log-level",
+    "--config",
+    "--launch-prefix",
+    "--launch-prefix-filter",
+    "--ros-param",
+    "--ros-remap",
+    "--tmux-only",
+    "--tmux-session",
+    "--log-level",
 }
 OWN_FLAGS = {
-    "-h", "--help", "--schema", "--show-config",
-    "-n", "--noninteractive", "-d", "--debug", "--strict", "--diagnostics",
-    "--tmux", "--tmux-dash", "--tmux-logs", "--log-commands",
+    "-h",
+    "--help",
+    "--schema",
+    "--show-config",
+    "-n",
+    "--noninteractive",
+    "-d",
+    "--debug",
+    "--strict",
+    "--diagnostics",
+    "--tmux",
+    "--tmux-dash",
+    "--tmux-logs",
+    "--log-commands",
 }
 RESERVED = OWN_WITH_VALUE | OWN_FLAGS
 
@@ -106,7 +123,9 @@ def _complete_package_or_path(prefix, parsed_args, **kwargs):
     try:
         from argcomplete.completers import FilesCompleter
 
-        completions += FilesCompleter()(prefix=prefix, parsed_args=parsed_args, **kwargs)
+        completions += FilesCompleter()(
+            prefix=prefix, parsed_args=parsed_args, **kwargs
+        )
     except ImportError:
         pass
     return completions
@@ -180,7 +199,9 @@ class _KeyValueAction(argparse.Action):
             try:
                 parsed = yaml.safe_load(raw)
             except yaml.YAMLError as exc:
-                parser.error(f"argument {option_string}: cannot parse '{raw}' as YAML: {exc}")
+                parser.error(
+                    f"argument {option_string}: cannot parse '{raw}' as YAML: {exc}"
+                )
         else:
             parsed = raw
         current = dict(getattr(namespace, self.dest, None) or {})
@@ -220,7 +241,9 @@ def add_schema_args(parser: argparse.ArgumentParser, model: type):
         if spec.constraints:
             bits.append(f"({spec.constraints})")
         bits.append(
-            "[required]" if spec.required else f"[default: {_fmt_default(spec.default)}]"
+            "[required]"
+            if spec.required
+            else f"[default: {_fmt_default(spec.default)}]"
         )
         help_ = _esc("  ".join(b for b in bits if b))
 
@@ -231,22 +254,29 @@ def add_schema_args(parser: argparse.ArgumentParser, model: type):
             )
         elif spec.kind == "list":
             group.add_argument(
-                flag, action="append", metavar=spec.type_name,
-                choices=spec.choices, help=_esc(_join(bits, "repeatable")), **kwargs
+                flag,
+                action="append",
+                metavar=spec.type_name,
+                choices=spec.choices,
+                help=_esc(_join(bits, "repeatable")),
+                **kwargs,
             )
         elif spec.kind == "dict":
             note = "repeatable"
             if spec.infer:
                 note += "; values are parsed as YAML, quote to force a string"
             group.add_argument(
-                flag, action=_KeyValueAction, metavar="KEY=" + spec.type_name,
-                infer=spec.infer, choices=spec.choices,
-                help=_esc(_join(bits, note)), **kwargs
+                flag,
+                action=_KeyValueAction,
+                metavar="KEY=" + spec.type_name,
+                infer=spec.infer,
+                choices=spec.choices,
+                help=_esc(_join(bits, note)),
+                **kwargs,
             )
         else:
             group.add_argument(
-                flag, metavar=spec.type_name, choices=spec.choices,
-                help=help_, **kwargs
+                flag, metavar=spec.type_name, choices=spec.choices, help=help_, **kwargs
             )
     return skipped
 
@@ -255,91 +285,135 @@ def add_own_args(parser: argparse.ArgumentParser):
     """tlaunch's own options, in three groups, after the launch's arguments."""
     g = parser.add_argument_group("tlaunch: config")
     g.add_argument(
-        "--config", action="append", default=[], metavar="FILE", dest="$config",
+        "--config",
+        action="append",
+        default=[],
+        metavar="FILE",
+        dest="$config",
         help="YAML config file, or <package>:<path>. Repeatable; later files win "
         "(deep merge, lists replaced), flags win over all files",
     )
     g.add_argument(
-        "--show-config", action="store_true", dest="$show_config",
+        "--show-config",
+        action="store_true",
+        dest="$show_config",
         help="print the effective config, each value with its source, and exit",
     )
     g.add_argument(
-        "--schema", action="store_true", dest="$schema",
+        "--schema",
+        action="store_true",
+        dest="$schema",
         help="print the JSON Schema of this launch's config and exit",
     )
     g.add_argument(
-        "--ros-param", action="append", default=[], dest="$ros_param",
+        "--ros-param",
+        action="append",
+        default=[],
+        dest="$ros_param",
         metavar=ROS_CLI_SHAPE["param"],
         help="set a ROS parameter on the nodes matching PATTERN (/**, /**/planner, "
         "/ns/*; default /**). Value parsed as YAML. Repeatable",
     )
     g.add_argument(
-        "--ros-remap", action="append", default=[], dest="$ros_remap",
+        "--ros-remap",
+        action="append",
+        default=[],
+        dest="$ros_remap",
         metavar=ROS_CLI_SHAPE["remap"],
         help="remap a name on the nodes matching PATTERN (default /**). Repeatable",
     )
     g.add_argument(
-        "--strict", action="store_true", dest="$strict",
+        "--strict",
+        action="store_true",
+        dest="$strict",
         help="refuse untyped ROS parameters and remappings; config warnings "
         "become errors",
     )
 
     g = parser.add_argument_group("tlaunch: running")
     g.add_argument(
-        "--log-level", action="append", default=[], dest="$log_level",
+        "--log-level",
+        action="append",
+        default=[],
+        dest="$log_level",
         metavar="LEVEL",
         help="log level of every ROS node: debug, info, warn, error, fatal; or "
         "LOGGER:=LEVEL for one logger. Repeatable",
     )
     g.add_argument(
-        "--log-commands", action="store_true", dest="$log_commands",
+        "--log-commands",
+        action="store_true",
+        dest="$log_commands",
         help="log each process's final command line as it starts",
     )
     g.add_argument(
-        "-d", "--debug", action="store_true", dest="$debug",
+        "-d",
+        "--debug",
+        action="store_true",
+        dest="$debug",
         help="launch's debug output, Python tracebacks, and advisory config "
         "warnings",
     )
     g.add_argument(
-        "-n", "--noninteractive", action="store_true", dest="$noninteractive",
+        "-n",
+        "--noninteractive",
+        action="store_true",
+        dest="$noninteractive",
         default=not sys.stdin.isatty(),
         help="run without a terminal (default when stdin is not a tty)",
     )
     g.add_argument(
-        "--launch-prefix", metavar="CMD", dest="$launch_prefix",
+        "--launch-prefix",
+        metavar="CMD",
+        dest="$launch_prefix",
         help="prefix command for every executable (gdb -ex run --args, ...)",
     )
     g.add_argument(
-        "--launch-prefix-filter", metavar="REGEX", dest="$launch_prefix_filter",
+        "--launch-prefix-filter",
+        metavar="REGEX",
+        dest="$launch_prefix_filter",
         help="only apply --launch-prefix to executables matching REGEX",
     )
     g.add_argument(
-        "--diagnostics", action="store_true", dest="$diagnostics",
+        "--diagnostics",
+        action="store_true",
+        dest="$diagnostics",
         help="publish each process's status on /diagnostics (~1 Hz)",
     )
 
     g = parser.add_argument_group("tlaunch: tmux")
     g.add_argument(
-        "--tmux", action="store_true", dest="$tmux",
+        "--tmux",
+        action="store_true",
+        dest="$tmux",
         help="run each process in its own tmux pane (joins the current session, "
         "or opens one)",
     )
     g.add_argument(
-        "--tmux-only", action="append", default=[], dest="$tmux_only",
+        "--tmux-only",
+        action="append",
+        default=[],
+        dest="$tmux_only",
         metavar="GLOB",
         help="only processes matching GLOB, by process name or node FQN "
         "('turtlesim*', '/demo/*'). Repeatable",
     )
     g.add_argument(
-        "--tmux-dash", action="store_true", dest="$tmux_dash",
+        "--tmux-dash",
+        action="store_true",
+        dest="$tmux_dash",
         help="add a dashboard window: every pane with its status (lte-dash)",
     )
     g.add_argument(
-        "--tmux-logs", action="store_true", dest="$tmux_logs",
+        "--tmux-logs",
+        action="store_true",
+        dest="$tmux_logs",
         help="add a window with the /rosout log viewer (ros2-log-view)",
     )
     g.add_argument(
-        "--tmux-session", dest="$tmux_session", metavar="NAME",
+        "--tmux-session",
+        dest="$tmux_session",
+        metavar="NAME",
         help="use this session; joined if it exists, nothing in it is killed",
     )
 
@@ -526,7 +600,9 @@ def warn_unmatched(ros: rc.RosConfig, own: dict) -> None:
         print(f"{WARN} {message}", file=sys.stderr)
 
 
-def build_actions(typed: TypedLaunch, config: Any, ros: rc.RosConfig, own: dict) -> list:
+def build_actions(
+    typed: TypedLaunch, config: Any, ros: rc.RosConfig, own: dict
+) -> list:
     """Build the launch's actions with the untyped lanes active, so `node()` can
     pick up whatever is aimed at each node."""
     with rc.active(ros):
@@ -562,16 +638,22 @@ def panes_for(own: dict[str, Any], target: list[str]):
         return
     from . import tmux as tm
 
-    panes = tm.Panes(tmux_label(target), session=own["tmux_session"],
-                     dash=own["tmux_dash"], logs=own["tmux_logs"])
+    panes = tm.Panes(
+        tmux_label(target),
+        session=own["tmux_session"],
+        dash=own["tmux_dash"],
+        logs=own["tmux_logs"],
+    )
     try:
         panes.start()
         undo = tm.patch(panes, own["tmux_only"])
         try:
             panes.open_extras()
             if panes.dash is not None and not panes.joined:
-                print(f"[INFO] [{PROG}]: dashboard in tmux session "
-                      f"'{panes.session}' -- tmux attach -t {panes.session}")
+                print(
+                    f"[INFO] [{PROG}]: dashboard in tmux session "
+                    f"'{panes.session}' -- tmux attach -t {panes.session}"
+                )
             yield panes
         finally:
             undo()
@@ -582,8 +664,14 @@ def panes_for(own: dict[str, Any], target: list[str]):
         raise TlaunchError(str(exc)) from None
 
 
-def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any],
-               ros: rc.RosConfig, sources: dict, label: str) -> int:
+def run_launch(
+    typed: TypedLaunch,
+    config: Any,
+    own: dict[str, Any],
+    ros: rc.RosConfig,
+    sources: dict,
+    label: str,
+) -> int:
     import launch
     from launch.actions import SetLaunchConfiguration
 
@@ -616,7 +704,7 @@ def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any],
     )
     from . import tmux as tm
 
-    tm.attach_run(service, monitor)     # the dashboard's stop/shutdown, if any
+    tm.attach_run(service, monitor)  # the dashboard's stop/shutdown, if any
     if publisher is not None:
         publisher.start()
     try:
@@ -627,8 +715,14 @@ def run_launch(typed: TypedLaunch, config: Any, own: dict[str, Any],
     return mon.report(monitor, code, prog=PROG)
 
 
-def run_script(typed: TypedScript, config: Any, own: dict[str, Any],
-               ros: rc.RosConfig, sources: dict, label: str) -> int:
+def run_script(
+    typed: TypedScript,
+    config: Any,
+    own: dict[str, Any],
+    ros: rc.RosConfig,
+    sources: dict,
+    label: str,
+) -> int:
     """Run an imperative launch script (Q26): the script body drives a session.
 
     Unlike a launch, nothing is built up front -- the script builds and starts
@@ -656,7 +750,9 @@ def run_script(typed: TypedScript, config: Any, own: dict[str, Any],
 
 def print_general_help() -> None:
     parser = argparse.ArgumentParser(
-        prog=PROG, usage=USAGE, add_help=False,
+        prog=PROG,
+        usage=USAGE,
+        add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Run a typed launch file. Give the launch, then -h for the "
         "options generated\nfrom its config schema.",
@@ -670,8 +766,14 @@ def print_general_help() -> None:
     parser.print_help()
 
 
-def configure(typed: TypedTarget, files: list[str], cli: dict[str, Any], own: dict,
-              *, as_flags: bool = True):
+def configure(
+    typed: TypedTarget,
+    files: list[str],
+    cli: dict[str, Any],
+    own: dict,
+    *,
+    as_flags: bool = True,
+):
     """Layer, validate and expand: -> (config, sources, RosConfig).
 
     Every problem is a ``TlaunchError`` with the issues listed by flag. Shared by

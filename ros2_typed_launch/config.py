@@ -95,8 +95,9 @@ def load_config_file(path: str) -> dict:
     return data
 
 
-def expand_values(value: Any, source: str,
-                  variables: dict[str, str] | None = None) -> Any:
+def expand_values(
+    value: Any, source: str, variables: dict[str, str] | None = None
+) -> Any:
     """Expand ``$(...)`` in every string in ``value`` (see ``subst.py``)."""
     try:
         return subst.expand(value, source, variables)
@@ -121,7 +122,8 @@ def split_file(data: dict, source: str) -> tuple[dict, list[rc.Section]]:
         )
 
     stray = [
-        key for key, value in data.items()
+        key
+        for key, value in data.items()
         if key != rc.LAUNCH_ARGS_KEY and not rc.is_node_pattern(key, value)
     ]
     if stray:
@@ -185,14 +187,13 @@ def unknown_vars(sections: list[rc.Section], known: set[str]) -> list[str]:
         close = difflib.get_close_matches(name, sorted(known), n=1)
         hint = f" (did you mean '{close[0]}'?)" if close else ""
         places = "" if count == 1 else f", used {count} times"
-        problems.append(
-            f"$(var {name}): not an argument of this launch{places}{hint}"
-        )
+        problems.append(f"$(var {name}): not an argument of this launch{places}{hint}")
     return problems
 
 
-def check_vars(value: Any, where: str, usable: dict[str, str],
-               unusable: dict[str, str]) -> None:
+def check_vars(
+    value: Any, where: str, usable: dict[str, str], unusable: dict[str, str]
+) -> None:
     """Fail on a ``$(var NAME)`` we cannot answer, saying which name and why."""
     import difflib
 
@@ -246,8 +247,10 @@ def expand_sections(sections: list[rc.Section], launch_args: dict) -> None:
             check_vars(section.pattern, where, usable, unusable)
             # tidy, not checked: a pattern is ours, and carries * and **.
             section.retarget(rc.tidy(expand_values(section.pattern, where, usable)))
-        for key, values in ((rc.PARAMS_KEY, section.params),
-                            (rc.REMAPS_KEY, section.remaps)):
+        for key, values in (
+            (rc.PARAMS_KEY, section.params),
+            (rc.REMAPS_KEY, section.remaps),
+        ):
             check_vars(values, f"{where}.{key}", usable, unusable)
         section.params = expand_values(
             section.params, f"{where}.{rc.PARAMS_KEY}", usable
@@ -259,8 +262,9 @@ def expand_sections(sections: list[rc.Section], launch_args: dict) -> None:
         # that reaches rcl as a name, so they are repaired and checked now.
         try:
             section.remaps = {
-                rc.check_name(key, f"{where}.{rc.REMAPS_KEY}"):
-                rc.check_name(str(value), f"{where}.{rc.REMAPS_KEY}.{key}")
+                rc.check_name(key, f"{where}.{rc.REMAPS_KEY}"): rc.check_name(
+                    str(value), f"{where}.{rc.REMAPS_KEY}.{key}"
+                )
                 for key, value in section.remaps.items()
             }
         except rc.RosConfigError as exc:

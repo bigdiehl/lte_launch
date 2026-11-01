@@ -56,11 +56,11 @@ def run(returncode, *, stop=False, shutdown=False) -> mon.ProcessInfo:
 
 # ------------------------------------------------------------- what is a death
 def test_what_counts_as_a_death():
-    assert run(3).died_unexpectedly                       # the real case
-    assert run(-9).died_unexpectedly                      # killed from outside
-    assert not run(0).died_unexpectedly                    # a oneshot finishing
-    assert not run(3, stop=True).died_unexpectedly          # we asked it to stop
-    assert not run(-2, shutdown=True).died_unexpectedly     # the launch was ending
+    assert run(3).died_unexpectedly  # the real case
+    assert run(-9).died_unexpectedly  # killed from outside
+    assert not run(0).died_unexpectedly  # a oneshot finishing
+    assert not run(3, stop=True).died_unexpectedly  # we asked it to stop
+    assert not run(-2, shutdown=True).died_unexpectedly  # the launch was ending
 
     assert run(3).why() == "exit code 3"
     assert run(-9).why() == "killed by SIGKILL"
@@ -77,11 +77,14 @@ def test_a_record_is_filled_in_and_labelled_by_node():
     monitor = mon.Monitor(log=False)
     act = action()
     monitor.on_start(started(act, pid=4242, name="talker-1", env={"A": "b"}))
-    monitor.on_io(SimpleNamespace(action=act, process_name="talker-1", env=None,
-                                  text=b"hello\nworld\n"))
+    monitor.on_io(
+        SimpleNamespace(
+            action=act, process_name="talker-1", env=None, text=b"hello\nworld\n"
+        )
+    )
     info = monitor.get(act)
     assert (info.pid, info.process_name, info.cmd) == (4242, "talker-1", ["a", "b"])
-    assert info.env == {"A": "b"}          # how a session attributes it to a stage
+    assert info.env == {"A": "b"}  # how a session attributes it to a stage
     assert list(info.lines) == ["hello", "world"]
     assert info.running and not info.exited
     monitor.on_exit(exited(act, 0))
@@ -97,11 +100,11 @@ def test_a_record_is_filled_in_and_labelled_by_node():
 
     plain = action("flaky")
     monitor.on_start(started(plain, name="flaky-2"))
-    assert monitor.get(plain).node_name is None      # not a node
+    assert monitor.get(plain).node_name is None  # not a node
     assert monitor.get(plain).label == "flaky-2"
 
     assert mon.node_name_of(FakeNode("/ns/n")) == "/ns/n"
-    assert mon.node_name_of(action()) is None                      # raises inside
+    assert mon.node_name_of(action()) is None  # raises inside
     assert mon.node_name_of(FakeNode("<unset>")) is None
     # launch's placeholder for a node given no name: worse than no label
     assert mon.node_name_of(FakeNode("/<node_name_unspecified>")) is None
@@ -133,11 +136,11 @@ def test_reporting(capsys):
     act = action()
     monitor.on_start(started(act))
     monitor.on_exit(exited(act, 3))
-    assert mon.report(monitor, 0) == 1          # 0 -> failure
-    assert mon.report(monitor, 2) == 2          # a real code is kept
+    assert mon.report(monitor, 0) == 1  # 0 -> failure
+    assert mon.report(monitor, 2) == 2  # a real code is kept
     assert "died unexpectedly" in capsys.readouterr().err
 
-    monitor = mon.Monitor()                      # logging on, as in a real run
+    monitor = mon.Monitor()  # logging on, as in a real run
     act = action()
     monitor.on_start(started(act, name="flaky-2"))
     monitor.on_exit(exited(act, 3, name="flaky-2"))
@@ -178,7 +181,10 @@ def test_the_diagnostic_message_carries_the_level_as_bytes():
     assert running.level == DiagnosticStatus.OK and running.message == "running"
     assert running.name == "flaky-2"
     assert dict((kv.key, kv.value) for kv in running.values) == {
-        "process": "flaky-2", "pid": "99", "returncode": "", "cmd": "a b",
+        "process": "flaky-2",
+        "pid": "99",
+        "returncode": "",
+        "cmd": "a b",
     }
 
     monitor.on_exit(exited(act, 3, name="flaky-2"))

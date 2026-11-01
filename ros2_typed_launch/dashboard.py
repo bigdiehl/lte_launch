@@ -91,8 +91,12 @@ class HomeTee:
             self.saved[fd] = os.dup(fd)
             os.dup2(write, fd)
             os.close(write)
-            thread = threading.Thread(target=self._copy, args=(read, self.saved[fd]),
-                                      name=f"tlaunch-home-{fd}", daemon=True)
+            thread = threading.Thread(
+                target=self._copy,
+                args=(read, self.saved[fd]),
+                name=f"tlaunch-home-{fd}",
+                daemon=True,
+            )
             thread.start()
             self.threads.append(thread)
 
@@ -113,7 +117,7 @@ class HomeTee:
             except (OSError, ValueError):
                 pass
         for fd, saved in self.saved.items():
-            os.dup2(saved, fd)          # closes the pipe's last write end
+            os.dup2(saved, fd)  # closes the pipe's last write end
         for thread in self.threads:
             thread.join(timeout=2.0)
         for saved in self.saved.values():
@@ -127,7 +131,7 @@ class Dashboard:
 
     def __init__(self, session: str, key: str = "g"):
         self.session = session
-        self.key = key          # the prefix key lte-dash borrows; "" for none
+        self.key = key  # the prefix key lte-dash borrows; "" for none
         self.dir = tempfile.mkdtemp(prefix="tlaunch-dash-")
         self.status_file = os.path.join(self.dir, "status.json")
         self.home_log = os.path.join(self.dir, "home.log")
@@ -147,17 +151,30 @@ class Dashboard:
         self.server.bind(self.ctl)
         self.server.listen(4)
         result = subprocess.run(
-            [DASH, "--open", self.session, "--status", self.status_file,
-             "--ctl", self.ctl, "--home-log", self.home_log, "--key", self.key],
-            capture_output=True, text=True,
+            [
+                DASH,
+                "--open",
+                self.session,
+                "--status",
+                self.status_file,
+                "--ctl",
+                self.ctl,
+                "--home-log",
+                self.home_log,
+                "--key",
+                self.key,
+            ],
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0 or not result.stdout.split():
             raise TmuxError(f"{DASH} --open: {result.stderr.strip()}")
         self.window = result.stdout.split()[0]
         self.tee.start()
         for target, name in ((self._write_loop, "status"), (self._serve, "ctl")):
-            thread = threading.Thread(target=target, name=f"tlaunch-dash-{name}",
-                                      daemon=True)
+            thread = threading.Thread(
+                target=target, name=f"tlaunch-dash-{name}", daemon=True
+            )
             thread.start()
             self.threads.append(thread)
         return self.window
@@ -191,7 +208,7 @@ class Dashboard:
         try:
             with open(tmp, "w") as handle:
                 json.dump(entries, handle, indent=2)
-            os.replace(tmp, self.status_file)     # lte-dash never sees half a file
+            os.replace(tmp, self.status_file)  # lte-dash never sees half a file
         except OSError:
             pass
 
@@ -205,7 +222,7 @@ class Dashboard:
             try:
                 conn, _ = self.server.accept()
             except OSError:
-                return                       # closed by close()
+                return  # closed by close()
             with conn:
                 conn.settimeout(1.0)
                 data = b""
@@ -247,6 +264,7 @@ class Dashboard:
         shims = {row[2].get("shim") for row in self.panes() if row[0] in panes}
         for info in self.monitor.all() if self.monitor else []:
             if info.running and str(info.pid) in shims:
-                self.monitor.note_stop(info.action)   # asked for: not a death
+                self.monitor.note_stop(info.action)  # asked for: not a death
                 self.service.emit_event(
-                    ShutdownProcess(process_matcher=matches_action(info.action)))
+                    ShutdownProcess(process_matcher=matches_action(info.action))
+                )

@@ -79,8 +79,9 @@ def _expand_text(text: str, where: str, variables: dict[str, str] | None) -> str
         raise SubstitutionError(f"{where}: cannot expand '{text}': {cause}") from None
 
 
-def expand(value: Any, where: str = "config",
-           variables: dict[str, str] | None = None) -> Any:
+def expand(
+    value: Any, where: str = "config", variables: dict[str, str] | None = None
+) -> Any:
     """Expand ``$(...)`` in every string in ``value`` (recursively).
 
     ``variables`` are what ``$(var NAME)`` can read. Anything without a ``$(``

@@ -11,7 +11,9 @@ def test_check_pydantic_version(monkeypatch):
     monkeypatch.setattr(pydantic, "VERSION", "1.10.14")
     schema._check_pydantic_version()  # does not raise
     monkeypatch.setattr(pydantic, "VERSION", "2.13.5")
-    with pytest.raises(ImportError, match="needs Pydantic 1.x.*shadowing the system one"):
+    with pytest.raises(
+        ImportError, match="needs Pydantic 1.x.*shadowing the system one"
+    ):
         schema._check_pydantic_version()
 
 
@@ -47,8 +49,17 @@ def specs():
 
 def test_walk_flattens_and_describes_every_field():
     assert set(specs()) == {
-        "name", "flag", "algo", "maybe", "req", "tags", "params", "typed",
-        "items", "sub.a", "sub.tol",
+        "name",
+        "flag",
+        "algo",
+        "maybe",
+        "req",
+        "tags",
+        "params",
+        "typed",
+        "items",
+        "sub.a",
+        "sub.tol",
     }
     assert specs()["sub.a"].path == ("sub", "a")
     assert specs()["sub.a"].owner is Sub
@@ -62,7 +73,9 @@ def test_walk_flattens_and_describes_every_field():
     assert s["typed"].type_name == "FLOAT"
     assert s["params"].kind == "dict" and s["params"].infer
     assert s["items"].kind == "other" and not s["items"].supported
-    assert specs()["algo"].choices == ["x", "y"] and specs()["algo"].type_name == "{x|y}"
+    assert (
+        specs()["algo"].choices == ["x", "y"] and specs()["algo"].type_name == "{x|y}"
+    )
     # Pydantic v1 synthesizes a Constrained*Value subclass (e.g.
     # ConstrainedFloatValue < float) for any Field(ge=/le=/gt=/lt=...); it must
     # still classify as the plain scalar type, not fall through to "other".
@@ -115,5 +128,3 @@ def test_validate_and_dump():
     sch = schema.json_schema(M)
     assert sch["properties"]["req"]["type"] == "integer"
     assert schema.to_plain(schema.validate(M, {"req": 1}))["sub"]["a"] == 2
-
-

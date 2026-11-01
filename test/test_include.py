@@ -37,7 +37,6 @@ def test_include():
         include(child, OtherConfig())
 
 
-
 # --------------------------------------------------------- stock interop
 class Inner(BaseModel):
     r: int = Field(0, ge=0, le=255, description="Red")
@@ -52,7 +51,7 @@ class StockConfig(BaseModel):
 
 @launch(config=StockConfig)
 def stocked(config):
-    return [config]                 # the built config, to look at
+    return [config]  # the built config, to look at
 
 
 def run_stock(typed, **args):
@@ -72,11 +71,18 @@ def test_stock_launch_includes_a_typed_one(tmp_path):
     from launch.actions import DeclareLaunchArgument
 
     declared = {
-        e.name: e for e in stocked.generate_launch_description().entities
+        e.name: e
+        for e in stocked.generate_launch_description().entities
         if isinstance(e, DeclareLaunchArgument)
     }
-    assert list(declared) == ["name", "inner.r", "inner.enabled", "inner.tags", "tlaunch_config"]
-    assert declared["name"].default_value is None           # required: stock checks it
+    assert list(declared) == [
+        "name",
+        "inner.r",
+        "inner.enabled",
+        "inner.tags",
+        "tlaunch_config",
+    ]
+    assert declared["name"].default_value is None  # required: stock checks it
     assert declared["inner.r"].description == "Red (>=0, <=255)"
 
     config = run_stock(stocked, name="a", **{"inner.r": "7", "inner.tags": "[x, y]"})
@@ -91,7 +97,9 @@ def test_stock_launch_includes_a_typed_one(tmp_path):
     assert config.inner.r == 9
 
     # Errors read as tlaunch's do, named by argument.
-    with pytest.raises(Exception, match=r"(?s)typed launch 'stocked'.*inner\.r: ensure"):
+    with pytest.raises(
+        Exception, match=r"(?s)typed launch 'stocked'.*inner\.r: ensure"
+    ):
         run_stock(stocked, name="a", **{"inner.r": "999"})
     with pytest.raises(Exception, match=r"did you mean 'inner\.enabled'"):
         run_stock(stocked, name="a", **{"inner.enabld": "x"})
@@ -121,7 +129,8 @@ def test_stock_args():
         stock_arg([1, 2])
 
     assert stock_args({"name": "t1", "use_sim_time": True}) == [
-        ("name", "t1"), ("use_sim_time", "true"),
+        ("name", "t1"),
+        ("use_sim_time", "true"),
     ]
 
 
@@ -162,7 +171,7 @@ def test_node_typed_params():
     assert fqn_of("talker", None) == "/talker"
     assert fqn_of("talker", "ns") == "/ns/talker"
     assert fqn_of("talker", "/ns/") == "/ns/talker"
-    assert fqn_of(None, "ns") is None       # unknowable without a name
+    assert fqn_of(None, "ns") is None  # unknowable without a name
 
     action = node("turtlesim", "turtlesim_node", name="t", params=DemoParams())
     assert params_of(action) == {"background_r": 69, "holonomic": False}
@@ -179,10 +188,12 @@ def test_node_untyped_sections(capsys):
     action = node("turtlesim", "turtlesim_node", name="t")
     assert params_of(action) == {} and remaps_of(action) == []
 
-    ros = rc.RosConfig([
-        rc.Section("/**", {"use_sim_time": True}, {"/in": "/out"}, "f.yaml"),
-        rc.Section("/ns/other", {"nope": 1}, {}, "f.yaml"),
-    ])
+    ros = rc.RosConfig(
+        [
+            rc.Section("/**", {"use_sim_time": True}, {"/in": "/out"}, "f.yaml"),
+            rc.Section("/ns/other", {"nope": 1}, {}, "f.yaml"),
+        ]
+    )
     with rc.active(ros):
         action = node("turtlesim", "turtlesim_node", name="t", namespace="ns")
     assert params_of(action) == {"use_sim_time": True}
@@ -200,11 +211,9 @@ def test_node_untyped_sections(capsys):
         return action, section, capsys.readouterr().err
 
     action, section, err = build()
-    assert params_of(action)["background_r"] == 69   # typed value wins
-    assert err == ""                                # advisory only: quiet
-    assert section.shadowed == {"background_r"}     # but recorded, for --show-config
+    assert params_of(action)["background_r"] == 69  # typed value wins
+    assert err == ""  # advisory only: quiet
+    assert section.shadowed == {"background_r"}  # but recorded, for --show-config
 
     _, _, err = build(debug=True)
     assert "background_r" in err and "typed value wins" in err
-
-

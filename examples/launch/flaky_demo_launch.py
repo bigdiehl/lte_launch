@@ -26,10 +26,14 @@ class FlakyConfig(BaseModel):
     """A launch with one process that fails, to show the death report."""
 
     namespace: str = Field("demo", description="Namespace for the well-behaved node")
-    fail_after: float = Field(2.0, ge=0, description="Seconds before the flaky one dies")
+    fail_after: float = Field(
+        2.0, ge=0, description="Seconds before the flaky one dies"
+    )
     rc: int = Field(3, description="Exit code it dies with (0 = it behaves after all)")
     stop_after: float = Field(
-        8.0, ge=0, description="Shut the launch down after this many seconds (0 = never)"
+        8.0,
+        ge=0,
+        description="Shut the launch down after this many seconds (0 = never)",
     )
 
 
@@ -47,7 +51,8 @@ def flaky_demo(config: FlakyConfig):
             name="flaky",
             output="screen",
             cmd=[
-                "bash", "-c",
+                "bash",
+                "-c",
                 f"echo working; sleep {config.fail_after}; "
                 f"echo giving up >&2; exit {config.rc}",
             ],
@@ -55,7 +60,8 @@ def flaky_demo(config: FlakyConfig):
         # Exits 0 immediately: a job that finished, not a failure. It shows up in
         # --diagnostics as "stopped: exit code 0" and never in the summary.
         ExecuteProcess(
-            name="oneshot", output="screen",
+            name="oneshot",
+            output="screen",
             cmd=["bash", "-c", "echo did my job"],
         ),
     ]

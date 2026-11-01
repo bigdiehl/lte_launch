@@ -102,8 +102,10 @@ def _sections(ros: rc.RosConfig) -> list[str]:
     for pattern, entry in _merge_by_pattern(ros).items():
         lines.append("")
         lines.append(_line(0, f'"{pattern}":', _matched(entry["matched"])))
-        for key, items in ((rc.PARAMS_KEY, entry["params"]),
-                           (rc.REMAPS_KEY, entry["remaps"])):
+        for key, items in (
+            (rc.PARAMS_KEY, entry["params"]),
+            (rc.REMAPS_KEY, entry["remaps"]),
+        ):
             if not items:
                 continue
             lines.append(_line(2, f"{key}:"))
@@ -126,11 +128,14 @@ def _matched(matched: list[str]) -> str:
     return "-> " + (", ".join(dict.fromkeys(matched)) if matched else "NO MATCH")
 
 
-def render(model: type, config: Any, sources: dict, ros: rc.RosConfig,
-           label: str = "") -> str:
+def render(
+    model: type, config: Any, sources: dict, ros: rc.RosConfig, label: str = ""
+) -> str:
     """The whole effective config as a loadable YAML document."""
     header = ["# Effective configuration" + (f" for {label}" if label else "")]
-    header.append("# Comments show where each value came from; they are not part of the data.")
+    header.append(
+        "# Comments show where each value came from; they are not part of the data."
+    )
     if ros:
         header.append(
             "# '->' on a node pattern is what it matched in this build, from each "

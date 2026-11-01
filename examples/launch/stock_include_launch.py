@@ -29,16 +29,19 @@ class StockIncludeConfig(BaseModel):
 def stock_include(config: StockIncludeConfig):
     stock_file = os.path.join(
         get_package_share_directory("ros2_typed_launch"),
-        "launch", "spawn_turtle.launch.py",
+        "launch",
+        "spawn_turtle.launch.py",
     )
     return [
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(stock_file),
-            launch_arguments=stock_args({
-                "namespace": config.namespace,
-                "use_sim_time": config.use_sim_time,
-                "background_r": config.background_r,
-            }),
+            launch_arguments=stock_args(
+                {
+                    "namespace": config.namespace,
+                    "use_sim_time": config.use_sim_time,
+                    "background_r": config.background_r,
+                }
+            ),
         ),
     ]
 

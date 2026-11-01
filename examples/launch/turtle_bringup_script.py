@@ -31,11 +31,17 @@ class BringupConfig(BaseModel):
     """Bringup with checks between the stages."""
 
     namespace: str = Field("demo", description="Namespace to bring the turtle up in")
-    settle: float = Field(1.0, ge=0, description="Seconds of 'work' after the node is up")
+    settle: float = Field(
+        1.0, ge=0, description="Seconds of 'work' after the node is up"
+    )
     drive: bool = Field(True, description="Also start a driver that publishes cmd_vel")
     drive_for: float = Field(5.0, ge=0, description="Seconds to let the driver run")
-    restart_driver: bool = Field(True, description="Restart the driver stage once, to show it")
-    startup_timeout: float = Field(30.0, gt=0, description="How long to wait for bringup")
+    restart_driver: bool = Field(
+        True, description="Restart the driver stage once, to show it"
+    )
+    startup_timeout: float = Field(
+        30.0, gt=0, description="How long to wait for bringup"
+    )
 
 
 def driver_process(namespace: str) -> ExecuteProcess:
@@ -43,8 +49,13 @@ def driver_process(namespace: str) -> ExecuteProcess:
     return ExecuteProcess(
         name="driver",
         cmd=[
-            "ros2", "topic", "pub", "-r", "2",
-            f"/{namespace}/turtle1/cmd_vel", "geometry_msgs/msg/Twist",
+            "ros2",
+            "topic",
+            "pub",
+            "-r",
+            "2",
+            f"/{namespace}/turtle1/cmd_vel",
+            "geometry_msgs/msg/Twist",
             "{linear: {x: 1.2}, angular: {z: 0.9}}",
         ],
         output="screen",
@@ -66,7 +77,7 @@ def turtle_bringup(session, config: BringupConfig):
         )
         session.log("turtlesim is in the ROS graph -- bringup checks pass")
 
-        session.sleep(config.settle)     # stand in for real work
+        session.sleep(config.settle)  # stand in for real work
 
         if config.drive:
             # Started from a function, not from actions: that is what makes the
@@ -81,15 +92,17 @@ def turtle_bringup(session, config: BringupConfig):
             session.sleep(config.drive_for)
 
             if config.restart_driver:
-                driver.restart()         # stop, rebuild, start -- same handle
+                driver.restart()  # stop, rebuild, start -- same handle
                 driver["driver"].wait_output("publishing", timeout=15.0)
                 session.log(f"driver restarted, now pid {driver['driver'].pid}")
                 session.sleep(1.0)
 
-            driver.stop()                # one stage down, the session lives on
+            driver.stop()  # one stage down, the session lives on
             session.log(f"driver stopped (rc={driver['driver'].returncode})")
 
-        session.log(f"nodes now in the graph: {', '.join(sorted(session.node_names()))}")
+        session.log(
+            f"nodes now in the graph: {', '.join(sorted(session.node_names()))}"
+        )
         return 0
     finally:
         # Runs on Ctrl-C too, before the session shuts down.

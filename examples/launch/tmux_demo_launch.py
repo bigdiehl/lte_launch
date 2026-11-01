@@ -55,12 +55,19 @@ def tmux_demo(config: TmuxDemoConfig):
             ExecuteProcess(
                 name="chatter",
                 output="screen",
-                cmd=["bash", "-c", "i=0; while true; do echo \"tick $((i++))\"; sleep 1; done"],
+                cmd=[
+                    "bash",
+                    "-c",
+                    'i=0; while true; do echo "tick $((i++))"; sleep 1; done',
+                ],
             )
         )
     if config.teleop:
         actions.append(
-            window("teleop", [include(turtle_teleop, TeleopConfig(namespace=config.namespace))])
+            window(
+                "teleop",
+                [include(turtle_teleop, TeleopConfig(namespace=config.namespace))],
+            )
         )
     return actions
 

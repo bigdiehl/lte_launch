@@ -38,7 +38,10 @@ def test_resolve_by_path(sample_launch, fake_package):
 def test_launch_file_names(fake_package):
     # For tab completion: every *_launch.py stem in the package, sorted.
     assert loader.launch_file_names(fake_package) == [
-        "child_launch", "main_launch", "nested_launch", "not_a_launch",
+        "child_launch",
+        "main_launch",
+        "nested_launch",
+        "not_a_launch",
     ]
 
     assert loader.launch_file_names("no_such_package") == []
@@ -122,7 +125,9 @@ def test_ambiguous_names_and_import_cycles_are_clear_errors(tmp_path, monkeypatc
 
 
 def test_resolve_errors(fake_package):
-    with pytest.raises(loader.LaunchLookupError, match="package 'no_such_pkg' not found"):
+    with pytest.raises(
+        loader.LaunchLookupError, match="package 'no_such_pkg' not found"
+    ):
         loader.resolve("no_such_pkg", "x.py")
     with pytest.raises(
         loader.LaunchLookupError,
@@ -145,5 +150,3 @@ def test_resolve_errors(fake_package):
 
     with pytest.raises(loader.LaunchLookupError, match="not a typed launch file"):
         loader.resolve(fake_package, "not_a_launch.py")
-
-

@@ -165,8 +165,12 @@ def parse_sections(data: dict, source: str) -> list[Section]:
                     f"in '{source}': '{key}' -> '{name}' must be a mapping"
                 )
         sections.append(
-            Section(pattern=key, params=flatten_params(params), remaps=dict(remaps),
-                    source=source)
+            Section(
+                pattern=key,
+                params=flatten_params(params),
+                remaps=dict(remaps),
+                source=source,
+            )
         )
     return sections
 

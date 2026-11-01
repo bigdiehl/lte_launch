@@ -53,7 +53,9 @@ class TimerConfig(BaseModel):
         3.0, ge=0, description="Seconds to wait before spawning (TimerAction)"
     )
     stop_after: float = Field(
-        0.0, ge=0, description="Shut the launch down after this many seconds (0 = never)"
+        0.0,
+        ge=0,
+        description="Shut the launch down after this many seconds (0 = never)",
     )
 
 
@@ -140,7 +142,10 @@ def showcase(config: ShowcaseConfig):
                     LogInfo(msg=f"spawning a second turtle via {service}"),
                     ExecuteProcess(
                         cmd=[
-                            "ros2", "service", "call", service,
+                            "ros2",
+                            "service",
+                            "call",
+                            service,
                             "turtlesim/srv/Spawn",
                             "{x: 2.0, y: 2.0, theta: 0.0, name: 'turtle2'}",
                         ],

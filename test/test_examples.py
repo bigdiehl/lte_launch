@@ -33,7 +33,12 @@ def test_every_example_configures_and_builds(capsys):
     from ros2_typed_launch.core import TypedLaunch
 
     for name, configs in EXAMPLES.items():
-        argv = [PKG, name, *(a for c in configs for a in ("--config", c)), "--show-config"]
+        argv = [
+            PKG,
+            name,
+            *(a for c in configs for a in ("--config", c)),
+            "--show-config",
+        ]
         assert cli.main(argv) == 0, (name, capsys.readouterr().err)
         out = capsys.readouterr().out
         assert out.startswith(f"# Effective configuration for {PKG} {name}"), name
@@ -47,6 +52,9 @@ def test_every_example_configures_and_builds(capsys):
 def test_the_example_list_is_complete():
     from importlib.resources import files
 
-    found = {p.name for p in files(f"{PKG}.examples").iterdir()
-             if p.name.endswith(("_launch.py", "_script.py"))}
+    found = {
+        p.name
+        for p in files(f"{PKG}.examples").iterdir()
+        if p.name.endswith(("_launch.py", "_script.py"))
+    }
     assert found == set(EXAMPLES)

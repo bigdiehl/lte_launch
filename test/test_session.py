@@ -78,7 +78,10 @@ def test_helpers():
     from launch.substitutions import LaunchConfiguration
     from launch_ros.actions import Node
 
-    assert sess._declared_name(Node(package="p", executable="e", name="planner")) == "planner"
+    assert (
+        sess._declared_name(Node(package="p", executable="e", name="planner"))
+        == "planner"
+    )
     # Unnamed, or named at runtime: no key until it starts.
     assert sess._declared_name(Node(package="p", executable="e")) is None
     runtime = Node(package="p", executable="e", name=LaunchConfiguration("n"))
@@ -112,11 +115,11 @@ def test_waits():
     threading.Timer(0.05, lambda: session._on_shutdown(SimpleNamespace(), None)).start()
     start = time.monotonic()
     with pytest.raises(sess.SessionShutdown, match="waiting for a signal"):
-        session._wait(lambda: False, 30.0, "a signal")   # would block for 30s
+        session._wait(lambda: False, 30.0, "a signal")  # would block for 30s
     assert time.monotonic() - start < 5.0
 
     session, _ = make_session()
-    session.sleep(0.05)                                  # no exception
+    session.sleep(0.05)  # no exception
     session._on_shutdown(SimpleNamespace(due_to_sigint=True), None)
     with pytest.raises(sess.SessionShutdown):
         session.sleep(0.05)
@@ -141,8 +144,8 @@ def test_start():
     stage = session.start(demo_launch, DemoConfig(n=5))
 
     assert sorted(stage.processes) == ["first", "second"]
-    assert len(service.included) == 1          # queued with the service, once
-    assert stage["first"].started is False     # nothing has run
+    assert len(service.included) == 1  # queued with the service, once
+    assert stage["first"].started is False  # nothing has run
     with pytest.raises(KeyError, match="has no process named 'third'"):
         stage["third"]
 
@@ -156,14 +159,17 @@ def test_start():
     import launch
 
     session, _ = make_session()
-    assert session.start([ExecuteProcess(name="a", cmd=["x"])]).processes.keys() == {"a"}
+    assert session.start([ExecuteProcess(name="a", cmd=["x"])]).processes.keys() == {
+        "a"
+    }
     assert session.start(ExecuteProcess(name="b", cmd=["x"])).processes.keys() == {"b"}
     assert session.start(
         launch.LaunchDescription([ExecuteProcess(name="c", cmd=["x"])])
     ).processes.keys() == {"c"}
-    assert session.start(
-        lambda: [ExecuteProcess(name="d", cmd=["x"])], name="made"
-    ).name == "made"
+    assert (
+        session.start(lambda: [ExecuteProcess(name="d", cmd=["x"])], name="made").name
+        == "made"
+    )
     with pytest.raises(TypeError, match="start\\(\\) takes"):
         session.start("not an action")
 
@@ -203,11 +209,11 @@ def test_restart():
     threading.Timer(0.05, die).start()
     stage.restart(timeout=5.0)
 
-    assert sorted(stage.processes) == ["first", "second"]   # same keys
-    assert stage["first"] is not first                      # new process
-    assert stage["first"].action is not first.action        # freshly built action
-    assert len(service.included) == 2                       # started again
-    assert service.events                                   # the old one was stopped
+    assert sorted(stage.processes) == ["first", "second"]  # same keys
+    assert stage["first"] is not first  # new process
+    assert stage["first"].action is not first.action  # freshly built action
+    assert len(service.included) == 2  # started again
+    assert service.events  # the old one was stopped
 
 
 # ------------------------------------------------------- events -> handle state
@@ -218,7 +224,7 @@ def test_events_fill_in_the_handles():
 
     session._on_start(started(action, pid=4242), None)
     assert stage["first"].pid == 4242 and stage["first"].running
-    assert stage.wait_started.__doc__          # (documented)
+    assert stage.wait_started.__doc__  # (documented)
 
     session._on_io(io(action, "line one\nnode is ready\n"))
     assert stage["first"].output() == ["line one", "node is ready"]
@@ -241,14 +247,14 @@ def test_events_fill_in_the_handles():
     # attributes it (that is what STAGE_ENV is for).
     session, _ = make_session()
     stage = session.start(demo_launch, DemoConfig())
-    surprise = ExecuteProcess(cmd=["x"])     # not built by us
+    surprise = ExecuteProcess(cmd=["x"])  # not built by us
 
     session._on_start(
         started(surprise, name="helper-7", env={sess.STAGE_ENV: stage.id}), None
     )
 
     assert stage["helper-7"].pid == 111
-    assert session.processes                 # also in the session-wide registry
+    assert session.processes  # also in the session-wide registry
 
     session, _ = make_session()
     orphan = ExecuteProcess(cmd=["x"])
@@ -266,7 +272,7 @@ def test_stop():
 
     stage.stop(wait=False)
 
-    assert len(service.events) == 1          # only the running one
+    assert len(service.events) == 1  # only the running one
     event = service.events[0]
     assert isinstance(event, ShutdownProcess)
     assert event.process_matcher(stage["first"].action)
@@ -286,7 +292,7 @@ def test_stop():
 
     event = service.events[-1]
     assert isinstance(event, ShutdownProcess) and event.process_matcher(surprise)
-    assert session.monitor.get(surprise).stop_requested   # so it is not a "death"
+    assert session.monitor.get(surprise).stop_requested  # so it is not a "death"
 
 
 # ----------------------------------------------------------- the real service
@@ -297,7 +303,9 @@ class ScriptConfig(BaseModel):
 @script(config=ScriptConfig)
 def demo_script(session, config: ScriptConfig):
     stage = session.start(
-        lambda: [ExecuteProcess(name="talker", cmd=["echo", config.word], output="screen")],
+        lambda: [
+            ExecuteProcess(name="talker", cmd=["echo", config.word], output="screen")
+        ],
     )
     stage.wait_started(timeout=20.0)
     assert stage["talker"].pid > 0
@@ -312,9 +320,12 @@ def test_run_session_drives_a_real_launch_service():
     that raises stops the session and propagates."""
     # The whole contract, for real: service on the main thread, script on a
     # worker, output and exit status observed through the handles.
-    assert sess.run_session(
-        lambda session: demo_script.run(session, ScriptConfig(word="banana"))
-    ) == 0
+    assert (
+        sess.run_session(
+            lambda session: demo_script.run(session, ScriptConfig(word="banana"))
+        )
+        == 0
+    )
 
     def body(session):
         stage = session.start(
@@ -325,5 +336,3 @@ def test_run_session_drives_a_real_launch_service():
 
     with pytest.raises(ValueError, match="boom"):
         sess.run_session(body)
-
-

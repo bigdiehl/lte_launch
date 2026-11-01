@@ -15,20 +15,26 @@ from launch_ros.actions import Node, PushRosNamespace
 
 
 def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument("namespace", default_value="turtlesim"),
-        DeclareLaunchArgument("use_sim_time", default_value="false"),
-        DeclareLaunchArgument("background_r", default_value="69"),
-        GroupAction([
-            PushRosNamespace(LaunchConfiguration("namespace")),
-            Node(
-                package="turtlesim",
-                executable="turtlesim_node",
-                name="turtlesim",
-                parameters=[{
-                    "use_sim_time": LaunchConfiguration("use_sim_time"),
-                    "background_r": LaunchConfiguration("background_r"),
-                }],
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument("namespace", default_value="turtlesim"),
+            DeclareLaunchArgument("use_sim_time", default_value="false"),
+            DeclareLaunchArgument("background_r", default_value="69"),
+            GroupAction(
+                [
+                    PushRosNamespace(LaunchConfiguration("namespace")),
+                    Node(
+                        package="turtlesim",
+                        executable="turtlesim_node",
+                        name="turtlesim",
+                        parameters=[
+                            {
+                                "use_sim_time": LaunchConfiguration("use_sim_time"),
+                                "background_r": LaunchConfiguration("background_r"),
+                            }
+                        ],
+                    ),
+                ]
             ),
-        ]),
-    ])
+        ]
+    )

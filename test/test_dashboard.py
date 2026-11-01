@@ -15,8 +15,15 @@ from ros2_typed_launch import monitor as mon
 
 
 def ours(**values):
-    base = {"name": "/demo/turtlesim", "window": "main", "command": "turtlesim_node",
-            "shim": "100", "target": "101", "status": "", "stopped": ""}
+    base = {
+        "name": "/demo/turtlesim",
+        "window": "main",
+        "command": "turtlesim_node",
+        "shim": "100",
+        "target": "101",
+        "status": "",
+        "stopped": "",
+    }
     return {**base, **values}
 
 
@@ -55,7 +62,7 @@ class FakeService:
 
 
 def dashboard_with(rows):
-    dash = db.Dashboard.__new__(db.Dashboard)     # no window, no threads
+    dash = db.Dashboard.__new__(db.Dashboard)  # no window, no threads
     dash.service, dash.monitor = FakeService(), mon.Monitor(log=False)
     dash.panes = lambda: rows
     return dash
@@ -78,7 +85,7 @@ def test_sidebar_commands_go_through_launch():
     assert info.stop_requested
 
     dash.service.events.clear()
-    dash.command("stop", "%6")          # no process of this run has pid 200
+    dash.command("stop", "%6")  # no process of this run has pid 200
     assert dash.service.events == []
 
     from launch.events import Shutdown
@@ -108,11 +115,12 @@ def test_home_gets_python_output_and_a_child_process_alike(tmp_path):
         "tee.stop()\n"
         "print('after stop')\n"
     )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                            text=True, env={**os.environ})
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env={**os.environ}
+    )
     assert result.returncode == 0, result.stderr
     assert "from python" in result.stdout and "from a child" in result.stdout
-    assert "to stderr" in result.stderr                    # the terminal keeps it
+    assert "to stderr" in result.stderr  # the terminal keeps it
     home = log.read_text()
     assert "from python" in home and "from a child" in home and "to stderr" in home
     assert "after stop" not in home

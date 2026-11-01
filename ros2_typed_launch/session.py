@@ -72,7 +72,9 @@ def _matcher(pattern: Any) -> Callable[[str], bool]:
         return lambda line: pattern in line
     if isinstance(pattern, re.Pattern):
         return lambda line: pattern.search(line) is not None
-    raise TypeError(f"pattern must be a string or a compiled regex, got {type(pattern).__name__}")
+    raise TypeError(
+        f"pattern must be a string or a compiled regex, got {type(pattern).__name__}"
+    )
 
 
 def _execute_processes(entities: list) -> list:
@@ -122,8 +124,8 @@ def _declared_name(action) -> str | None:
     ``ExecuteProcess(name="driver")``. A node named by a substitution, or not
     named at all, has no key until it starts.
     """
-    name = _plain_text(getattr(action, "_Node__node_name", None))   # launch_ros Node
-    if name and not name.startswith("<"):            # <node_name_unspecified>
+    name = _plain_text(getattr(action, "_Node__node_name", None))  # launch_ros Node
+    if name and not name.startswith("<"):  # <node_name_unspecified>
         return name
     return _plain_text(getattr(action, "name", None))  # ExecuteProcess(name=...)
 
@@ -258,8 +260,14 @@ class Stage:
         nav.stop()
     """
 
-    def __init__(self, session: "Session", name: str, stage_id: str,
-                 target: Any = None, config: Any = None):
+    def __init__(
+        self,
+        session: "Session",
+        name: str,
+        stage_id: str,
+        target: Any = None,
+        config: Any = None,
+    ):
         self.name = name
         self.id = stage_id
         self.target = target
@@ -380,7 +388,7 @@ class Stage:
     def _reset(self) -> None:
         for process in self._processes.values():
             self._session._by_action.pop(process.action, None)
-        self._processes.clear()   # the monitor keeps its records, for the summary
+        self._processes.clear()  # the monitor keeps its records, for the summary
 
     def __repr__(self) -> str:
         return f"<Stage {self.name} ({len(self)} process(es))>"
@@ -394,8 +402,14 @@ class Session:
     launch's.
     """
 
-    def __init__(self, service, *, ros: rc.RosConfig | None = None, debug: bool = False,
-                 monitor: Monitor | None = None):
+    def __init__(
+        self,
+        service,
+        *,
+        ros: rc.RosConfig | None = None,
+        debug: bool = False,
+        monitor: Monitor | None = None,
+    ):
         self._service = service
         self._ros = ros if ros is not None else rc.RosConfig()
         self.debug = debug
@@ -414,7 +428,9 @@ class Session:
         self._rclpy_ours = False
 
     # ------------------------------------------------------------------ waits
-    def _wait(self, predicate: Callable[[], Any], timeout: float | None, what: str) -> Any:
+    def _wait(
+        self, predicate: Callable[[], Any], timeout: float | None, what: str
+    ) -> Any:
         """Block until ``predicate()`` is truthy; return what it returned.
 
         Raises ``SessionShutdown`` the moment the session starts shutting down
@@ -432,7 +448,9 @@ class Session:
                 if deadline is not None:
                     left = deadline - time.monotonic()
                     if left <= 0:
-                        raise WaitTimeout(f"timed out after {timeout}s waiting for {what}")
+                        raise WaitTimeout(
+                            f"timed out after {timeout}s waiting for {what}"
+                        )
                     slice_ = min(POLL, left)
                 self._changed.wait(slice_)
 
@@ -448,7 +466,9 @@ class Session:
         return self._shutdown.is_set()
 
     # ---------------------------------------------------------------- startin
-    def start(self, target: Any, config: Any = None, *, name: str | None = None) -> Stage:
+    def start(
+        self, target: Any, config: Any = None, *, name: str | None = None
+    ) -> Stage:
         """Start a typed launch (or raw actions) now, and return its handle.
 
         ``target`` is a ``@launch``-decorated typed launch, a ``LaunchDescription``,
@@ -506,7 +526,9 @@ class Session:
             # A function that builds the actions -- the restartable form of
             # passing actions directly.
             label = getattr(target, "__name__", "actions")
-            actions, _ = self._build(target() if config is None else target(config), None)
+            actions, _ = self._build(
+                target() if config is None else target(config), None
+            )
             return actions, "actions" if label == "<lambda>" else label
         if config is not None:
             raise TypeError("config is only accepted with a typed launch or a factory")
@@ -538,7 +560,9 @@ class Session:
         for action in actions:
             # Tell the monitor we asked for this, so it is not reported as a death.
             self.monitor.note_stop(action)
-            self._service.emit_event(ShutdownProcess(process_matcher=matches_action(action)))
+            self._service.emit_event(
+                ShutdownProcess(process_matcher=matches_action(action))
+            )
 
     def stop_all(self, *, wait: bool = True, timeout: float | None = 10.0) -> None:
         """Stop every stage, keeping the session itself alive."""
@@ -630,11 +654,13 @@ class Session:
         from launch.actions import OpaqueFunction, RegisterEventHandler
         from launch.event_handlers import OnShutdown
 
-        return launch.LaunchDescription([
-            *self.monitor.handlers(),
-            RegisterEventHandler(OnShutdown(on_shutdown=self._on_shutdown)),
-            OpaqueFunction(function=self._on_running),
-        ])
+        return launch.LaunchDescription(
+            [
+                *self.monitor.handlers(),
+                RegisterEventHandler(OnShutdown(on_shutdown=self._on_shutdown)),
+                OpaqueFunction(function=self._on_running),
+            ]
+        )
 
     def _record_changed(self, info: ProcessInfo) -> None:
         """A process event reached the monitor: adopt anything new, wake waiters."""
@@ -723,7 +749,7 @@ def run_session(
     service.include_launch_description(session.bootstrap())
     from . import tmux as tm
 
-    tm.attach_run(service, monitor)     # the dashboard's stop/shutdown, if any
+    tm.attach_run(service, monitor)  # the dashboard's stop/shutdown, if any
     publisher = mon.Diagnostics(monitor) if diagnostics else None
 
     result: dict[str, Any] = {}
@@ -759,5 +785,7 @@ def run_session(
     if error is not None:
         raise error
     value = result.get("value")
-    code = value if isinstance(value, int) and not isinstance(value, bool) else service_rc
+    code = (
+        value if isinstance(value, int) and not isinstance(value, bool) else service_rc
+    )
     return mon.report(monitor, code)

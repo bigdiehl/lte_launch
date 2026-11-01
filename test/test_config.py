@@ -36,7 +36,7 @@ def test_load_config_file(write):
 
 def test_resolve_config_ref(write, tmp_path, monkeypatch):
     path = write("x.yaml", "a: 1\n")
-    assert cfg.resolve_config_ref(path) == path                     # a plain path wins
+    assert cfg.resolve_config_ref(path) == path  # a plain path wins
     assert cfg.resolve_config_ref("no_such_dir/f.yaml") == "no_such_dir/f.yaml"
 
     share = tmp_path / "share"
@@ -71,12 +71,12 @@ def test_launch_args_become_variables_and_are_checked():
     assert usable == {
         "namespace": "demo",
         "turtlesim.background_r": "69",
-        "turtlesim.holonomic": "false",     # launch's own spelling, not "False"
+        "turtlesim.holonomic": "false",  # launch's own spelling, not "False"
         "turtlesim.scale": "1.5",
     }
     assert unusable == {"tags": "is a list", "unset": "is not set"}
 
-    cfg.check_vars("/$(var namespace)/x", "where", usable, unusable)   # fine
+    cfg.check_vars("/$(var namespace)/x", "where", usable, unusable)  # fine
     with pytest.raises(cfg.ConfigFileError, match="did you mean 'namespace'"):
         cfg.check_vars("$(var nmespace)", "where", usable, unusable)
     with pytest.raises(cfg.ConfigFileError, match="'tags' is a list"):
@@ -84,17 +84,21 @@ def test_launch_args_become_variables_and_are_checked():
 
     with pytest.raises(cfg.ConfigFileError, match="cannot be built from another one"):
         cfg.reject_vars({"node_name": "$(var namespace)_node"}, "a.yaml")
-    cfg.reject_vars({"path": "$(env HOME)/x"}, "a.yaml")       # other substitutions are fine
+    cfg.reject_vars({"path": "$(env HOME)/x"}, "a.yaml")  # other substitutions are fine
 
 
 def test_unknown_vars_are_found_against_the_schema():
     known = {"namespace", "robot.name"}
     sections = [
-        rc.Section("/$(var nope)/x", {"a": "$(var robot.name)"},
-                   {"b": "$(var nmespace)"}, "a.yaml"),
+        rc.Section(
+            "/$(var nope)/x",
+            {"a": "$(var robot.name)"},
+            {"b": "$(var nmespace)"},
+            "a.yaml",
+        ),
     ]
     problems = cfg.unknown_vars(sections, known)
-    assert len(problems) == 2                       # robot.name is fine
+    assert len(problems) == 2  # robot.name is fine
     assert "$(var nope): not an argument of this launch" in problems[0]
     assert "did you mean 'namespace'" in problems[1]
     assert cfg.unknown_vars([rc.Section("/x", {}, {}, "a.yaml")], known) == []
@@ -112,22 +116,32 @@ def test_unknown_vars_are_found_against_the_schema():
 def test_expand_sections_resolves_values_and_the_pattern():
     pytest.importorskip("rclpy")
     sections = [
-        rc.Section("/$(var namespace)/turtlesim", {"n": "$(var turtlesim.background_r)"},
-                   {"turtle1/cmd_vel": "/$(var namespace)/joy_vel"}, "a.yaml"),
+        rc.Section(
+            "/$(var namespace)/turtlesim",
+            {"n": "$(var turtlesim.background_r)"},
+            {"turtle1/cmd_vel": "/$(var namespace)/joy_vel"},
+            "a.yaml",
+        ),
     ]
-    cfg.expand_sections(sections, {"namespace": "alpha", "turtlesim": {"background_r": 7}})
+    cfg.expand_sections(
+        sections, {"namespace": "alpha", "turtlesim": {"background_r": 7}}
+    )
     section = sections[0]
     assert section.pattern == "/alpha/turtlesim"
-    assert section.matches("/alpha/turtlesim")      # the recompiled pattern
+    assert section.matches("/alpha/turtlesim")  # the recompiled pattern
     assert not section.matches("/demo/turtlesim")
-    assert section.params == {"n": "7"}             # a substitution is always text
+    assert section.params == {"n": "7"}  # a substitution is always text
     assert section.remaps == {"turtle1/cmd_vel": "/alpha/joy_vel"}
 
     # An empty namespace substituted into a path: ROS would reject
     # '//joy_vel'; the node means '/joy_vel'.
     sections = [
-        rc.Section("/$(var namespace)/turtlesim", {},
-                   {"turtle1/cmd_vel": "/$(var namespace)/joy_vel"}, "a.yaml"),
+        rc.Section(
+            "/$(var namespace)/turtlesim",
+            {},
+            {"turtle1/cmd_vel": "/$(var namespace)/joy_vel"},
+            "a.yaml",
+        ),
     ]
     cfg.expand_sections(sections, {"namespace": ""})
     assert sections[0].pattern == "/turtlesim"
@@ -162,7 +176,10 @@ def test_expand_uses_the_stock_substitutions(monkeypatch):
     assert out["n"]["p"] and "$(" not in out["n"]["p"]
 
     variables = {"namespace": "alpha", "turtlesim.background_r": "69"}
-    assert subst.expand("/$(var namespace)/joy_vel", variables=variables) == "/alpha/joy_vel"
+    assert (
+        subst.expand("/$(var namespace)/joy_vel", variables=variables)
+        == "/alpha/joy_vel"
+    )
     assert subst.expand("$(var turtlesim.background_r)", variables=variables) == "69"
     out = subst.expand({"a": ["$(var namespace)-$(env HOME)"]}, variables=variables)
     assert out["a"][0].startswith("alpha-/")
@@ -175,9 +192,9 @@ def test_a_failed_substitution_names_the_key_and_the_cause():
     with pytest.raises(subst.SubstitutionError) as exc:
         subst.expand("$(not-a-substitution x)")
     assert "Unknown substitution" in str(exc.value)
-    assert "VisitError" not in str(exc.value)   # lark's wrapper is unwrapped
+    assert "VisitError" not in str(exc.value)  # lark's wrapper is unwrapped
     with pytest.raises(subst.SubstitutionError, match="does not exist"):
-        subst.expand("$(var namespace)")        # no variables given
+        subst.expand("$(var namespace)")  # no variables given
 
 
 def test_var_names_finds_every_variable_a_value_asks_for():

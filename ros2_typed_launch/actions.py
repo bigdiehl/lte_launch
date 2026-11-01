@@ -25,8 +25,7 @@ def include(child: TypedLaunch, config: Any):
 
     if not isinstance(config, child.config_type):
         raise TypeError(
-            f"{child.config_type.__name__} expected, "
-            f"got {type(config).__name__}"
+            f"{child.config_type.__name__} expected, " f"got {type(config).__name__}"
         )
     return GroupAction(actions=child.build(config))
 

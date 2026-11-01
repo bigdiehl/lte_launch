@@ -133,7 +133,7 @@ def real_cmd(cmd) -> list[str]:
     """
     cmd = list(cmd)
     if cmd and os.path.basename(cmd[0]) == PANE_SCRIPT and "--" in cmd:
-        return cmd[cmd.index("--") + 1:]
+        return cmd[cmd.index("--") + 1 :]
     return cmd
 
 
@@ -170,12 +170,17 @@ class Monitor:
         return [
             RegisterEventHandler(OnProcessStart(on_start=self.on_start)),
             RegisterEventHandler(OnProcessExit(on_exit=self.on_exit)),
-            RegisterEventHandler(OnProcessIO(on_stdout=self.on_io, on_stderr=self.on_io)),
+            RegisterEventHandler(
+                OnProcessIO(on_stdout=self.on_io, on_stderr=self.on_io)
+            ),
             RegisterEventHandler(OnShutdown(on_shutdown=self.on_shutdown)),
             # Where a declared check (checks.py) finds us: to report a failure,
             # and to read output a process printed before the check started.
-            OpaqueFunction(function=lambda context: context.extend_globals(
-                {"ros2_typed_launch_monitor": self})),
+            OpaqueFunction(
+                function=lambda context: context.extend_globals(
+                    {"ros2_typed_launch_monitor": self}
+                )
+            ),
         ]
 
     def track(self, action, key: str | None = None) -> ProcessInfo:
@@ -212,7 +217,7 @@ class Monitor:
         info.pid = event.pid
         info.cmd = real_cmd(event.cmd or [])
         info.env = getattr(event, "env", None)
-        info.started = True                      # announce last
+        info.started = True  # announce last
         self._changed(info)
 
     def on_exit(self, event, context=None) -> None:
@@ -221,7 +226,7 @@ class Monitor:
         info.returncode = event.returncode
         info.during_shutdown = self.shutting_down
         info.started = True
-        info.exited = True                       # announce last
+        info.exited = True  # announce last
         if self._log and info.died_unexpectedly:
             self._report(info)
         self._changed(info)
@@ -299,8 +304,9 @@ class Diagnostics:
     aborts the whole process inside the C conversion -- found the hard way.
     """
 
-    def __init__(self, monitor: Monitor, *, period: float = PUBLISH_PERIOD,
-                 topic: str = TOPIC):
+    def __init__(
+        self, monitor: Monitor, *, period: float = PUBLISH_PERIOD, topic: str = TOPIC
+    ):
         self.monitor = monitor
         self.period = period
         self.topic = topic

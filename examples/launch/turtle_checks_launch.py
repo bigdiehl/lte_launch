@@ -25,7 +25,9 @@ class ChecksConfig(BaseModel):
     timeout: float = Field(20.0, gt=0, description="Seconds each check may take")
     expect: str = Field("publishing", description="What the driver must print")
     stop_after: float = Field(
-        5.0, ge=0, description="Shut down this long after the driver checks out (0 = never)"
+        5.0,
+        ge=0,
+        description="Shut down this long after the driver checks out (0 = never)",
     )
 
 
@@ -34,15 +36,27 @@ def turtle_checks(config: ChecksConfig):
     driver = driver_process(config.namespace)
     finish = (
         [TimerAction(period=config.stop_after, actions=[Shutdown(reason="demo done")])]
-        if config.stop_after else []
+        if config.stop_after
+        else []
     )
     return [
-        node(package="turtlesim", executable="turtlesim_node", name="turtlesim",
-             namespace=config.namespace, output="screen"),
-        checks.node(f"/{config.namespace}/turtlesim", timeout=config.timeout, then=[
-            driver,
-            checks.output(driver, config.expect, timeout=config.timeout, then=finish),
-        ]),
+        node(
+            package="turtlesim",
+            executable="turtlesim_node",
+            name="turtlesim",
+            namespace=config.namespace,
+            output="screen",
+        ),
+        checks.node(
+            f"/{config.namespace}/turtlesim",
+            timeout=config.timeout,
+            then=[
+                driver,
+                checks.output(
+                    driver, config.expect, timeout=config.timeout, then=finish
+                ),
+            ],
+        ),
     ]
 
 
