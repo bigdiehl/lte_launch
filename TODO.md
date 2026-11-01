@@ -33,7 +33,7 @@ Eventually I'd like to incorporate some sort of node/launch manager. Framed as a
     - [DONE] Similar to https://gitlab.iiia.csic.es/socialminds/tools/launch_tui
       -- --tmux-dash (libtmux_easy's lte-dash: per-pane status, stop, Q, home =
          this run's output) and --tmux-logs (ros2-log-view window, prefix v).
-         See design-notes Q29, ./run.sh. Rerun is refused: launch will not
+         See design-notes Q29, examples/run.sh. Rerun is refused: launch will not
          execute an action twice.
     - [DONE] Should make tmux optional. Not everyone likes that.
       -- every tmux flag is opt-in; without them a run is plain launch.
