@@ -45,23 +45,22 @@ Built and verified: scripts (Q26), and declared checks in a plain launch (Q30). 
 dashboard's rerun is refused for every run; a script's stages *can* restart, so `r` could map
 to `stage.restart()` there.
 
-## Branch `engine-lte` (2026-11-06, uncommitted)
+## Branch `engine-lte` (2026-11-07, pushed; not merged to `main`)
 
 The engine is libtmux_easy; the stock-engine code is removed on this branch (`main` keeps it).
+Design: `docs/design.md`; stock parity: `docs/parity.md`.
 
 | Area | What |
 |---|---|
-| Docs | `docs/` (`goals.md`, `design.md`, `parity.md`, `comparison.md`); `working/vision.md` (A-D, C chosen) |
-| libtmux_easy | Branch `processes-core`: `libtmux_easy.processes.Processes` without pytest (`on_exit`, `env`, `kill_all`, bare windows); `testing.Processes` is a subclass. 5 new tests; plugin 33/33; lte_launch_test 123 pass (2 collection tests fail on `main` too) |
-| Engine | `engine.py` on `Processes`: subprocess/tmux/dry/test group; parallel teardown, second Ctrl-C kills; `respawn`, `required`, `shutdown()`, `cwd`, `environment()`, `--launch-prefix`; joins the current tmux session |
-| Composable | `component(into=)`: standalone, our container, or one started elsewhere (`container_at`, held: unloaded at teardown, fails if it leaves the graph); `load()` via LoadNode; failed load is an error; dry run as `ros2 component load` |
-| Interop | Stock file: one `ros2 launch` process. Stock includes us: one `tlaunch` process (validated at include time) |
-| Removed | `actions`, `checks`, `commands`, `dashboard`, `monitor`, `session`, `tmux`, `tlaunch-pane`, `@script`, `--diagnostics`, `--tmux-only`, `--tmux-logs`, `-n`; examples showcase, bringup script, checks, flaky, tmux demo; their tests |
-| Tests | 47 unit; `examples/lte_test` 8/8 (process, build, start, layout) |
-| Verified live | params reach nodes; Ctrl-C exit 0; a death exit 1; `--tmux` (teleop TTY); composition in all three placements, external unload and loss, failed load; stock include both ways |
+| libtmux_easy | Branch `processes-core` (pushed): `processes.Processes` without pytest (`on_exit`, `env`, `kill_all`, bare windows, per-process `sigint_timeout`) |
+| Engine | Parallel teardown and the end sequence; `respawn`, `required`, `shutdown()`, `on_shutdown`, `stop_timeout`, `prefix`, `cwd`, scopes |
+| Schema | `@launch` from the annotation, `config=`, or the signature (P2) |
+| ROS | `component(into=)` (standalone, ours, elsewhere), lifecycle nodes, `ros_params`/`ros_remaps` scopes |
+| Interop | Stock include: one process, its deaths are ours. Stock includes us: one `tlaunch` process |
+| Tests | 90 (36 live, `-m "not live"` < 1 s); `colcon test` 91; `examples/lte_test` 8/8 |
 
-Next: `docs/parity.md` "Next, by value" (lifecycle, stock include deaths, `on_shutdown`);
-libtmux_easy `.deb` for system Python.
+Next: rename to `lte_launch` (package `ros-jazzy-lte-launch`); CI; Q25 (re-type substituted
+parameters); `docs/parity.md` "Next, by value"; libtmux_easy `.deb` for system Python.
 
 ## Open questions
 

@@ -11,3 +11,6 @@ __pycache__/
 
 # editors
 *.swp
+
+# Claude Code agent worktrees
+.claude/worktrees/

@@ -17,10 +17,10 @@ Status: **yes** built, **partial** built with a gap, **todo** planned, **no** no
 | `cwd=`, `env=`, `additional_env=` | `cwd=`, `env=`; `with environment(VAR=...)` | yes |
 | `respawn`, `respawn_delay`, `respawn_max_retries` | `respawn=<delay or True>`, `respawn_max=` | yes |
 | `on_exit=Shutdown()` | `required=True` | yes |
-| `sigterm_timeout`, `sigkill_timeout` | Fixed: SIGINT 10 s, SIGTERM 5 s, SIGKILL | partial |
+| `sigterm_timeout`, `sigkill_timeout` | `stop_timeout=` per process, `--stop-timeout S` run-wide (SIGINT's grace, default 10 s); SIGTERM's fixed at 5 s | partial: no per-process SIGTERM grace |
 | `output='screen'/'log'`, `output_format` | Always both: `[window:name] line` and a log file | partial |
 | `emulate_tty` | `--tmux`: a real TTY per process | yes |
-| `prefix=` (gdb, valgrind) | `--launch-prefix`, `--launch-prefix-filter` (all executables) | partial: no per-node prefix |
+| `prefix=` (gdb, valgrind) | `node(..., prefix=)`, also `process()`, `container()`; replaces `--launch-prefix` for that process, filter or not (`""`: none), as stock. A debugger needs `--tmux` | yes |
 | `log_cmd` | `--log-commands` | yes |
 | `--log-level` | `--log-level LEVEL` or `LOGGER:=LEVEL` | yes |
 | `exec_name` | The process name is `name` | yes |
@@ -30,14 +30,17 @@ Status: **yes** built, **partial** built with a gap, **todo** planned, **no** no
 | Stock | Here | Status |
 |---|---|---|
 | `PushRosNamespace`, `GroupAction(scoped)` | `with namespace("ns"):` | yes |
-| `SetParameter`, `SetParametersFromFile` | `/**` node section or `--ros-param` | yes, from config; no in-body scope |
-| `SetRemap` | `/**` `ros__remappings` or `--ros-remap` | yes, from config |
-| `SetUseSimTime` | `--ros-param use_sim_time=true` | yes |
+| `SetParameter`, `SetParametersFromFile` | `with ros_params(use_sim_time=True):` in the body; `/**` node section or `--ros-param` from config | yes; not into a stock include |
+| `SetRemap` | `with ros_remaps({"/tf": "tf"}):`; `/**` `ros__remappings` or `--ros-remap` | yes; not into a stock include |
+| `SetUseSimTime` | `with ros_params(use_sim_time=True):`, `--ros-param use_sim_time=true` | yes |
 | `ComposableNodeContainer` | `container(name, kind=)` | yes |
 | `LoadComposableNodes`, `ComposableNode` | `box.load(package, plugin, name=, params=, remaps=, intra_process=, extra=)` | yes; a failed load is an error (stock only logs) |
-| Loading into a container started elsewhere | `container_at("/ns/name")`, or `into="/ns/name"` | yes; unloaded at teardown (stock leaves them) |
+| Loading into a container started elsewhere | `container_at("/ns/name")`, or `into="/ns/name"` | yes; unloaded at teardown, or at `procs.close()` after `start(procs)` (stock leaves them) |
 | Standalone or composed, by config (nav2's `use_composition`) | `component(..., into=config.container)` | yes: one string field |
-| `LifecycleNode`, `LifecycleTransition`, `OnStateTransition` | -- | todo: `node.transition("configure")`, `wait_for_state("active")` |
+| `LifecycleNode` | `lifecycle_node(pkg, exe, name=, autostart=)`; `lifecycle_at(name)` for one started elsewhere | yes |
+| `LifecycleTransition`, `ChangeState` event | `lc.transition("configure")`, `lc.set_state("active")`, `lc.activate()` | yes; a failed transition is an error at its line (stock only logs) |
+| `OnStateTransition` | `lc.wait_for_state("active")`, `lc.state` | yes, in the body; no callback after bringup |
+| Lifecycle nodes at shutdown | `shutdown` transition to each of ours before the SIGINT (`finalize=False` opts out) | yes; stock only sends SIGINT |
 | `RosTimer` | `sleep()` (wall clock) | partial: no sim time |
 | `SetROSLogDir` | Environment `ROS_LOG_DIR` via `environment()` | yes |
 
@@ -52,7 +55,7 @@ Status: **yes** built, **partial** built with a gap, **todo** planned, **no** no
 | `OnProcessStart` | Code after `node()` | yes |
 | `OnProcessIO` | `proc.wait_for(regex)`, `ready=` | yes |
 | `OnProcessExit` | `proc.wait_for_exit()` | yes, in the body; no callback after bringup |
-| `OnShutdown` | `try/finally` in the body covers bringup only | todo: `on_shutdown(fn)` |
+| `OnShutdown` | `on_shutdown(fn, timeout=)` (or `@on_shutdown`): LIFO, before any process is signalled, `fn(reason)` | yes |
 | `OnExecutionComplete`, `OnIncludeLaunchDescription` | Sequential code | yes |
 | `EmitEvent`, `RegisterEventHandler`, `UnregisterEventHandler` | -- | no |
 | `Shutdown` | `shutdown(reason)` | yes |
@@ -65,7 +68,7 @@ Status: **yes** built, **partial** built with a gap, **todo** planned, **no** no
 | Stock | Here | Status |
 |---|---|---|
 | `IncludeLaunchDescription` of a typed file | `include(typed, config)`: a function call | yes |
-| `IncludeLaunchDescription` of a stock file | `include("pkg", "f.launch.py", **args)`: one process | partial: no per-node view or death |
+| `IncludeLaunchDescription` of a stock file | `include("pkg", "f.launch.py", **args)` or `include(path)`: one process; a `process has died` line is a death (`exits=`, `allow=`) | partial: no per-node view |
 | Stock includes us | Stub in `share/`; one `tlaunch` process | yes |
 | XML / YAML front ends | -- | no: stock files are included instead |
 
@@ -100,13 +103,11 @@ All replaced by Python; `$(...)` in config files still uses the stock grammar (`
 
 ## Not in stock, here
 
-Typed schema and flags, `--config` layering with provenance, node patterns, `--strict`, a death
-fails the run (stock exits 0), a ready line, `--tmux`, `--tmux-dash`, restarting one process
+Typed schema and flags, a failed lifecycle transition fails the run, lifecycle `shutdown` at teardown, `--config` layering with provenance, node patterns, `--strict`, a death
+fails the run (stock exits 0), also one inside a stock include, a ready line, `--tmux`, `--tmux-dash`, restarting one process
 (`proc.restart()`), lte_launch_test integration (`start(procs)`, `build`, `panes`).
 
 ## Next, by value
 
-1. Lifecycle: `transition()`, `wait_for_state()`; a failed transition is an error.
-2. Stock include deaths: parse `process has died` lines (lte_launch_test's `launch_death`).
-3. `on_shutdown(fn)`, and per-process stop timeouts.
-4. In-body `SetParameter`-style scope.
+1. Scopes into a stock include (`ros_params()` as `ros2 launch` arguments).
+2. A per-process `sigkill_timeout` (SIGTERM to SIGKILL is fixed at 5 s).

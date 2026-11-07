@@ -224,7 +224,7 @@ Gaps found, and where they stand after path step 5 (same day):
 | Gap | Now |
 |---|---|
 | Stock include | One `ros2 launch` process, run live. Deaths inside it are not parsed yet (lte's `launch_death`) |
-| Composable nodes, lifecycle | Composable: built (`composable.py`). Lifecycle: next |
+| Composable nodes, lifecycle | Composable: built (`composable.py`). Lifecycle: built (`lifecycle.py`) |
 | libtmux_easy not importable by `/usr/bin/python3` | Still needs `PYTHONPATH` or its `.deb` |
 | Subprocess backend is ours | Gone: `libtmux_easy.processes.Processes` (branch `processes-core`) runs every mode |
 | tmux: always a session of our own | Joins the current session inside tmux. `--tmux-only`, `--tmux-logs` dropped |

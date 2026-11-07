@@ -35,8 +35,11 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   any package (e.g. `working/prototypes/`) — no parent package, so no relative imports
   (same limitation stock `ros2 launch` has for a bare file). A launch is identified by
   its exported `generate_launch_description`, tagged `.typed_target` by `@launch`.
-  `@launch` takes the model from the first parameter's annotation
-  (`def f(config: MyConfig)`), or `@launch(config=MyConfig)`.
+  `@launch` takes the model from the only parameter's annotation
+  (`def f(config: MyConfig)`), or `@launch(config=MyConfig)`; otherwise **the signature is
+  the schema** (`def f(ns: str = "demo", rate: int = Field(5, ge=1))`, built by
+  `schema.model_from_signature`, docstring = help, `f.config_type` = the model; see
+  `turtle_teleop_launch.py`).
   **Typed launch files only**; untyped ones use stock `ros2 launch`.
 - Config layering: model defaults < `--config` files (repeatable, **deep-merged, later
   wins; lists are replaced, dict keys merge**) < CLI flags; validated *before* anything
@@ -105,6 +108,9 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   ending/a death, then **stop everything at once** (SIGINT, SIGTERM, SIGKILL; a second Ctrl-C
   kills). Exit 0 clean or interrupted, 1 a death or failed bringup, 2 a config error.
   `respawn=`, `required=`, `cwd=`, `env=`, `with environment()`, `--launch-prefix`.
+  `stop_timeout=` per process (SIGINT's grace; run-wide `--stop-timeout`, libtmux_easy's
+  per-process `sigint_timeout`). `on_shutdown(fn)`: LIFO, before anything is signalled,
+  `fn(reason)` with `.kind`; errors/timeouts logged, exit 1; not in a dry run.
 - **Composable nodes** (`composable.py`): `component(package, plugin, name=, into=)` picks
   placement from one value: None/`""` standalone (`executable=` as a node, else its own
   container), `"box"` our container (started on first use, or `container("box", kind=)`),
@@ -113,6 +119,11 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   error at that line (stock only logs it). Components in a container started elsewhere are
   **held** (`Run.held`): the run stays up, unloads them at teardown, and fails if the
   container leaves the graph. Dry run: each load is a `ros2 component load` command.
+- **Lifecycle nodes** (`lifecycle.py`): `lifecycle_node(pkg, exe, name=, autostart=)` -> a
+  handle with `transition(label)`, `set_state()`/`activate()`, `wait_for_state()`, `state`;
+  `lifecycle_at(name)` for one started elsewhere. A failed transition is a `LaunchError` at its
+  line. Teardown sends `shutdown` to ours before the SIGINT (`finalize=False` opts out). Dry
+  run: each transition is a `ros2 lifecycle set` command.
 - **lte_launch_test** runs a launch four ways (`examples/lte_test/`): `tlaunch` as one process
   gated on the ready line; `procs.build(target.build)`; `target.start(procs)` (any mode);
   `target.panes()` (dry-run plan).
@@ -123,7 +134,7 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   include time, that runs one `tlaunch` process; `ros2_typed_launch_install_stubs(...)` in
   CMake puts a stub in `share/<pkg>/launch/` so stock can find it. Design-notes Q17.
 - **Parity with stock launch** is tracked feature by feature in `docs/parity.md` (next:
-  lifecycle, stock-include deaths, `on_shutdown`).
+  scopes into a stock include, `sigkill_timeout`).
 - **Pydantic 1** (system, apt/rosdep `python3-pydantic`), not 2 — launch authors import
   Pydantic directly in their own files, so a system install matters more than v2's
   stricter API. Both `package.xml`s declare `<exec_depend>python3-pydantic</exec_depend>`.
@@ -158,17 +169,23 @@ package. It is built in a separate colcon workspace, **`~/ros2_ws`**, where
   calls: `node`, `process`, `include`, scopes, waits, `shutdown`, `share`), `engine.py`
   (`Run`, `Proc`, `execute`, tmux session), `command.py` (a node's argv), `composable.py`
   (`container`, `load`), `ros_config.py` (node patterns + the untyped lanes), `subst.py`
-  (`$(...)` expansion), `effective.py` (the effective config as a loadable YAML file),
+  (`$(...)` expansion), `lifecycle.py` (lifecycle nodes), `effective.py` (the effective
+  config as a loadable YAML file),
   `stock.py` (a typed launch as a stock `LaunchDescription`).
 - `scripts/` — `tlaunch`.
 - `test/` — pytest suite (one test per behaviour, many assertions each — add assertions to
   the matching test rather than a new test per case). `test_examples.py` builds every example.
+  Tests that start real processes are marked **`live`** (`test_supervision`, `test_waits`,
+  `test_nodes`, `test_composable`, `test_include_live`, `test_cli_e2e`; helpers and the probe
+  node in `_live.py`, fixtures `make_run`/`probe`/`spawn`/`uniq` in `conftest.py`); each skips
+  without ROS, its packages or libtmux_easy. Use a unique `ROS_DOMAIN_ID` when other ROS runs share
+  the machine.
 - `examples/` — runnable examples. **`examples/README.md` lists every one with its
   commands** — keep it updated when an example is added or its flags change.
   - `launch/` → `ros2_typed_launch.examples`: `turtle_bringup_launch.py` (the synchronous
     style), `turtle_demo_launch.py`, `turtle_teleop_launch.py`, `localization_launch.py`,
     `turtle_params_launch.py` (typed `RosParams` + the untyped lanes), `composition_launch.py`
-    (composable nodes), `stock_include_launch.py` — ordinary submodules importing each other
+    (composable nodes), `lifecycle_launch.py`, `stock_include_launch.py` — ordinary submodules importing each other
     directly; `__init__.py` re-exports them all.
   - `config/*.yaml` → `share/ros2_typed_launch/examples/config/`
     (`--config ros2_typed_launch:examples/config/quiet.yaml`).
@@ -199,7 +216,8 @@ cd ~/ros2_ws                                                          # the work
 source /opt/ros/jazzy/setup.bash && colcon build --symlink-install    # build
 source install/setup.bash         # tlaunch on PATH + tab completion come from this alone
 
-python3 -m pytest ~/projects/ros2_typed_launch/test -q               # tests
+python3 -m pytest ~/projects/ros2_typed_launch/test -q               # tests (~45 s)
+python3 -m pytest ~/projects/ros2_typed_launch/test -q -m "not live"  # quick: nothing starts (~1 s)
 colcon test --packages-select ros2_typed_launch && colcon test-result
 
 tlaunch ros2_typed_launch turtle_demo_launch.py -h              # schema-generated help
