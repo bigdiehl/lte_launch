@@ -214,6 +214,6 @@ Live tests use unique names per test and wait on conditions, not sleeps (`test/_
 
 | Piece | Used for |
 |---|---|
-| libtmux_easy (branch `processes-core`) | `Processes`, `TmuxSession`, `lte-run`, `lte-dash`. Improvements go back there |
+| libtmux_easy (>= 0.4.0) | `Processes`, `TmuxSession`, `lte-run`, `lte-dash`. Improvements go back there |
 | rclpy, composition_interfaces, lifecycle_msgs | Graph waits, component loading, lifecycle transitions |
 | Pydantic 1 (system) | The schema. Only `schema.py` touches it |

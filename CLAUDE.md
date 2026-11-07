@@ -105,7 +105,7 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   from another package. `include(child, config)` runs the child's body right there (a
   function call), inside the parent's namespace/window/environment scopes.
 - **The engine (`engine.py`) runs on a libtmux_easy `Processes` group** (`libtmux_easy.processes`,
-  libtmux_easy branch `processes-core`): subprocesses by default, wrap-mode tmux panes with
+  libtmux_easy >= 0.4.0): subprocesses by default, wrap-mode tmux panes with
   `--tmux`/`--tmux-dash` (a new session, or the current one inside tmux), none with
   `--dry-run`, or a test's own group. The body runs on the main thread; a wait blocks and
   fails on **any** death (an exit not in `exits`, default `(0,)`). After the body: the
@@ -211,7 +211,7 @@ ROS 2 Jazzy at `/opt/ros/jazzy`, Python 3.12, Ubuntu 24.04. colcon,
 pytest and Pydantic all come from the **system** (`python3-pydantic` v1.10, apt/rosdep) —
 `ros2`/`tlaunch` run on `/usr/bin/python3`, which sees it by default. **Exception:
 libtmux_easy** (the engine) is not installed for system Python here: until its `.deb` is,
-`export PYTHONPATH=~/projects/libtmux_easy/src:$PYTHONPATH` (on branch `processes-core`).
+`export PYTHONPATH=~/projects/libtmux_easy/src:$PYTHONPATH` (0.4.0+, or its release `.deb`).
 Build and run from the **workspace** (`~/ros2_ws`): source ROS, then its install overlay. A
 clean CMake configure picks `~/.local/bin/python3.10` (no catkin_pkg): pass
 `--cmake-args -DPython3_EXECUTABLE=/usr/bin/python3`.

@@ -12,13 +12,13 @@ on:
     inputs:
       libtmux_easy:
         description: "libtmux_easy: a release tag (v0.4.0) to download, or a branch to build"
-        default: processes-core
+        default: v0.4.0
 
 env:
   # The engine, nasa-jpl/libtmux_easy: a v* tag downloads python3-libtmux-easy's
   # .deb from its GitHub release; anything else builds it from that branch.
-  # Set to a release tag once processes-core is released.
-  LIBTMUX_EASY: ${{ inputs.libtmux_easy || 'processes-core' }}
+  # Bump with each libtmux_easy release lte_launch needs.
+  LIBTMUX_EASY: ${{ inputs.libtmux_easy || 'v0.4.0' }}
 
 jobs:
   libtmux-easy:

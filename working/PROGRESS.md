@@ -52,7 +52,7 @@ Design: `docs/design.md`; stock parity: `docs/parity.md`.
 
 | Area | What |
 |---|---|
-| libtmux_easy | Branch `processes-core` (pushed): `processes.Processes` without pytest (`on_exit`, `env`, `kill_all`, bare windows, per-process `sigint_timeout`) |
+| libtmux_easy | Released as 0.4.0: `processes.Processes` without pytest (`on_exit`, `env`, `kill_all`, bare windows, per-process `sigint_timeout`) |
 | Engine | Parallel teardown and the end sequence; `respawn`, `required`, `shutdown()`, `on_shutdown`, `stop_timeout`, `prefix`, `cwd`, scopes |
 | Schema | `@launch` from the annotation, `config=`, or the signature (P2) |
 | ROS | `component(into=)` (standalone, ours, elsewhere), lifecycle nodes, `ros_params`/`ros_remaps` scopes |
