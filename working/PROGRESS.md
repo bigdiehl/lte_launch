@@ -1,7 +1,7 @@
 # Progress
 
 All work is on `main`. Last updated 2026-11-01.
-Design: `DESIGN.md`. Decisions and open questions: `design-notes.md`.
+Design: `../docs/design.md`; goals: `../docs/goals.md`. Decisions and open questions: `design-notes.md`.
 
 ## Done
 
@@ -45,11 +45,23 @@ Built and verified: scripts (Q26), and declared checks in a plain launch (Q30). 
 dashboard's rerun is refused for every run; a script's stages *can* restart, so `r` could map
 to `stage.restart()` there.
 
-## Next (suggested order)
+## Branch `engine-lte` (2026-11-06, uncommitted)
 
-1. Dashboard rerun for script stages.
-2. Fix the `chatter` demo's Ctrl-C exit (-2), or strip the stand-in from launch's own
-   "process has died" line.
+The engine is libtmux_easy; the stock-engine code is removed on this branch (`main` keeps it).
+
+| Area | What |
+|---|---|
+| Docs | `docs/` (`goals.md`, `design.md`, `parity.md`, `comparison.md`); `working/vision.md` (A-D, C chosen) |
+| libtmux_easy | Branch `processes-core`: `libtmux_easy.processes.Processes` without pytest (`on_exit`, `env`, `kill_all`, bare windows); `testing.Processes` is a subclass. 5 new tests; plugin 33/33; lte_launch_test 123 pass (2 collection tests fail on `main` too) |
+| Engine | `engine.py` on `Processes`: subprocess/tmux/dry/test group; parallel teardown, second Ctrl-C kills; `respawn`, `required`, `shutdown()`, `cwd`, `environment()`, `--launch-prefix`; joins the current tmux session |
+| Composable | `component(into=)`: standalone, our container, or one started elsewhere (`container_at`, held: unloaded at teardown, fails if it leaves the graph); `load()` via LoadNode; failed load is an error; dry run as `ros2 component load` |
+| Interop | Stock file: one `ros2 launch` process. Stock includes us: one `tlaunch` process (validated at include time) |
+| Removed | `actions`, `checks`, `commands`, `dashboard`, `monitor`, `session`, `tmux`, `tlaunch-pane`, `@script`, `--diagnostics`, `--tmux-only`, `--tmux-logs`, `-n`; examples showcase, bringup script, checks, flaky, tmux demo; their tests |
+| Tests | 47 unit; `examples/lte_test` 8/8 (process, build, start, layout) |
+| Verified live | params reach nodes; Ctrl-C exit 0; a death exit 1; `--tmux` (teleop TTY); composition in all three placements, external unload and loss, failed load; stock include both ways |
+
+Next: `docs/parity.md` "Next, by value" (lifecycle, stock include deaths, `on_shutdown`);
+libtmux_easy `.deb` for system Python.
 
 ## Open questions
 

@@ -3,13 +3,10 @@
 # without naming the submodule. The submodule-qualified form
 # (`from ros2_typed_launch.examples.turtle_demo_launch import ...`) always
 # works too and is unambiguous when two launches ever reuse a name.
-from .flaky_demo_launch import flaky_demo, FlakyConfig  # noqa: F401
+from .composition_launch import composition, CompositionConfig  # noqa: F401
 from .localization_launch import localization, LocalizationConfig  # noqa: F401
 from .stock_include_launch import stock_include, StockIncludeConfig  # noqa: F401
-from .turtle_params_launch import turtle_params, ParamsDemoConfig  # noqa: F401
-from .turtle_bringup_script import turtle_bringup, BringupConfig  # noqa: F401
-from .turtle_checks_launch import turtle_checks, ChecksConfig  # noqa: F401
+from .turtle_bringup_launch import turtle_bringup, BringupConfig  # noqa: F401
 from .turtle_demo_launch import turtle_demo, TurtleDemoConfig  # noqa: F401
-from .tmux_demo_launch import tmux_demo, TmuxDemoConfig  # noqa: F401
-from .turtle_showcase_launch import showcase, ShowcaseConfig  # noqa: F401
+from .turtle_params_launch import turtle_params, ParamsDemoConfig  # noqa: F401
 from .turtle_teleop_launch import turtle_teleop, TeleopConfig  # noqa: F401

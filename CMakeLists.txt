@@ -20,7 +20,7 @@ install(DIRECTORY examples/stock_launch/ DESTINATION share/${PROJECT_NAME}/launc
 include(cmake/ros2_typed_launch-extras.cmake)
 ros2_typed_launch_install_stubs(${PROJECT_NAME}.examples
   turtle_demo_launch turtle_params_launch turtle_teleop_launch localization_launch
-  turtle_checks_launch)
+  turtle_bringup_launch composition_launch)
 
 # tlaunch: a plain script (no setuptools console_scripts indirection needed).
 # Installed twice: lib/${PROJECT_NAME} is where `ros2 run ros2_typed_launch
@@ -30,11 +30,6 @@ ros2_typed_launch_install_stubs(${PROJECT_NAME}.examples
 # no shell function needed.
 install(PROGRAMS scripts/tlaunch DESTINATION lib/${PROJECT_NAME})
 install(PROGRAMS scripts/tlaunch DESTINATION bin)
-
-# tlaunch-pane: the stand-in launch runs when a process goes in a tmux pane
-# (see tmux.py). On PATH for the same reason, because tmux.py looks it up there.
-install(PROGRAMS scripts/tlaunch-pane DESTINATION lib/${PROJECT_NAME})
-install(PROGRAMS scripts/tlaunch-pane DESTINATION bin)
 
 # Registers tab completion the moment install/setup.bash is sourced -- no
 # manual `eval "$(register-python-argcomplete tlaunch)"` needed. Must come

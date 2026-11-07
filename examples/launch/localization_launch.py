@@ -3,9 +3,7 @@
 
 from pydantic import BaseModel, Field
 
-from launch_ros.actions import Node
-
-from ros2_typed_launch import launch
+from ros2_typed_launch import launch, node
 
 
 class LocalizationConfig(BaseModel):
@@ -21,26 +19,13 @@ class LocalizationConfig(BaseModel):
 
 @launch(config=LocalizationConfig)
 def localization(config: LocalizationConfig):
-    return [
-        Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="map_to_odom",
-            namespace=config.namespace,
-            arguments=[
-                "--x",
-                str(config.x),
-                "--y",
-                str(config.y),
-                "--yaw",
-                str(config.yaw),
-                "--frame-id",
-                config.map_frame,
-                "--child-frame-id",
-                config.odom_frame,
-            ],
-        )
-    ]
-
-
-generate_launch_description = localization.generate_launch_description
+    node(
+        "tf2_ros",
+        "static_transform_publisher",
+        name="map_to_odom",
+        namespace=config.namespace,
+        arguments=[
+            "--x", str(config.x), "--y", str(config.y), "--yaw", str(config.yaw),
+            "--frame-id", config.map_frame, "--child-frame-id", config.odom_frame,
+        ],
+    )  # fmt: skip

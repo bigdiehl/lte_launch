@@ -34,7 +34,7 @@ class Cfg(BaseModel):
 
 @launch(config=Cfg)
 def sample(config):
-    return []
+    pass
 
 
 generate_launch_description = sample.generate_launch_description
@@ -73,7 +73,7 @@ def write(tmp_path):
 # relative import -- the pattern `turtle_demo_launch.py` uses for real.
 CHILD_MODULE = """
 from pydantic import BaseModel
-from ros2_typed_launch import launch
+from ros2_typed_launch import launch, process
 
 
 class ChildConfig(BaseModel):
@@ -82,7 +82,7 @@ class ChildConfig(BaseModel):
 
 @launch(config=ChildConfig)
 def child(config):
-    return ["child-%d" % config.n]
+    process("child-%d" % config.n, "true")
 
 generate_launch_description = child.generate_launch_description
 """
@@ -99,7 +99,7 @@ class MainConfig(BaseModel):
 
 @launch(config=MainConfig)
 def main(config):
-    return [include(child, ChildConfig(n=config.n))]
+    include(child, ChildConfig(n=config.n))
 
 generate_launch_description = main.generate_launch_description
 """

@@ -17,7 +17,6 @@ flags, validated, and only then is anything started.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
 import os
 import re
@@ -28,14 +27,13 @@ from typing import Any
 
 import yaml
 
-from . import commands
 from . import config as cfg
 from . import effective
 from . import loader
-from . import monitor as mon
 from . import ros_config as rc
 from . import schema
-from .core import TypedLaunch, TypedScript, TypedTarget
+from .command import check_levels
+from .core import TypedTarget
 
 PROG = "tlaunch"
 WARN = f"{PROG}: warning:"
@@ -53,7 +51,6 @@ OWN_WITH_VALUE = {
     "--launch-prefix-filter",
     "--ros-param",
     "--ros-remap",
-    "--tmux-only",
     "--tmux-session",
     "--log-level",
 }
@@ -62,16 +59,13 @@ OWN_FLAGS = {
     "--help",
     "--schema",
     "--show-config",
-    "-n",
-    "--noninteractive",
     "-d",
     "--debug",
     "--strict",
-    "--diagnostics",
     "--tmux",
     "--tmux-dash",
-    "--tmux-logs",
     "--log-commands",
+    "--dry-run",
 }
 RESERVED = OWN_WITH_VALUE | OWN_FLAGS
 
@@ -351,16 +345,7 @@ def add_own_args(parser: argparse.ArgumentParser):
         "--debug",
         action="store_true",
         dest="$debug",
-        help="launch's debug output, Python tracebacks, and advisory config "
-        "warnings",
-    )
-    g.add_argument(
-        "-n",
-        "--noninteractive",
-        action="store_true",
-        dest="$noninteractive",
-        default=not sys.stdin.isatty(),
-        help="run without a terminal (default when stdin is not a tty)",
+        help="Python tracebacks and advisory config warnings",
     )
     g.add_argument(
         "--launch-prefix",
@@ -375,10 +360,10 @@ def add_own_args(parser: argparse.ArgumentParser):
         help="only apply --launch-prefix to executables matching REGEX",
     )
     g.add_argument(
-        "--diagnostics",
+        "--dry-run",
         action="store_true",
-        dest="$diagnostics",
-        help="publish each process's status on /diagnostics (~1 Hz)",
+        dest="$dry_run",
+        help="start nothing; print each process's command line",
     )
 
     g = parser.add_argument_group("tlaunch: tmux")
@@ -390,31 +375,16 @@ def add_own_args(parser: argparse.ArgumentParser):
         "or opens one)",
     )
     g.add_argument(
-        "--tmux-only",
-        action="append",
-        default=[],
-        dest="$tmux_only",
-        metavar="GLOB",
-        help="only processes matching GLOB, by process name or node FQN "
-        "('turtlesim*', '/demo/*'). Repeatable",
-    )
-    g.add_argument(
         "--tmux-dash",
         action="store_true",
         dest="$tmux_dash",
         help="add a dashboard window: every pane with its status (lte-dash)",
     )
     g.add_argument(
-        "--tmux-logs",
-        action="store_true",
-        dest="$tmux_logs",
-        help="add a window with the /rosout log viewer (ros2-log-view)",
-    )
-    g.add_argument(
         "--tmux-session",
         dest="$tmux_session",
         metavar="NAME",
-        help="use this session; joined if it exists, nothing in it is killed",
+        help="open the panes in a new session of this name",
     )
 
 
@@ -600,152 +570,89 @@ def warn_unmatched(ros: rc.RosConfig, own: dict) -> None:
         print(f"{WARN} {message}", file=sys.stderr)
 
 
-def build_actions(
-    typed: TypedLaunch, config: Any, ros: rc.RosConfig, own: dict
-) -> list:
-    """Build the launch's actions with the untyped lanes active, so `node()` can
-    pick up whatever is aimed at each node."""
-    with rc.active(ros):
-        actions = list(typed.build(config))
-    warn_unmatched(ros, own)
-    return actions
+#: Any of these turns panes on.
+TMUX_FLAGS = ("tmux", "tmux_session", "tmux_dash")
 
 
-#: Any of these turns panes on: naming a session, picking processes or asking
-#: for the dashboard without also passing --tmux is plainly asking for panes.
-TMUX_FLAGS = ("tmux", "tmux_only", "tmux_session", "tmux_dash", "tmux_logs")
-
-
-def tmux_label(target: list[str]) -> str:
-    """A short name for the run, for a tmux session to be called after."""
+def run_label(target: list[str]) -> str:
+    """A short name for the run: its log dir and tmux session are named after it."""
     stem = os.path.basename(target[-1] if target else "launch")
-    for suffix in (".py", "_launch", "_script"):
+    if not stem.endswith(".py"):  # a dotted module path
+        stem = stem.rsplit(".", 1)[-1]
+    for suffix in (".py", "_launch"):
         stem = stem[: -len(suffix)] if stem.endswith(suffix) else stem
     # tmux reads '.' and ':' in a name as part of a target address.
     return re.sub(r"[^A-Za-z0-9_-]", "-", stem) or "launch"
 
 
-@contextlib.contextmanager
-def panes_for(own: dict[str, Any], target: list[str]):
-    """Send processes to tmux panes for the duration, if asked to (Q28).
+def run(
+    typed,
+    config: Any,
+    own: dict[str, Any],
+    ros: rc.RosConfig,
+    sources: dict,
+    label: str,
+    target: list[str],
+) -> int:
+    """Run the launch: its body starts processes as it runs, as subprocesses
+    or tmux panes, in a libtmux_easy ``Processes`` group."""
+    import tempfile
 
-    Set up here, around both a launch and a script, because what it changes is
-    how *every* process in this interpreter is started -- so it belongs in one
-    place, before anything can start, and is undone afterwards.
-    """
-    if not any(own[flag] for flag in TMUX_FLAGS):
-        yield None
-        return
-    from . import tmux as tm
+    from . import engine
 
-    panes = tm.Panes(
-        tmux_label(target),
-        session=own["tmux_session"],
-        dash=own["tmux_dash"],
-        logs=own["tmux_logs"],
-    )
-    try:
-        panes.start()
-        undo = tm.patch(panes, own["tmux_only"])
+    stem = run_label(target)
+    log_dir = os.path.join(tempfile.gettempdir(), "tlaunch", f"{stem}-{os.getpid()}")
+    procs = session = None
+    join = False
+    if not own["dry_run"]:
         try:
-            panes.open_extras()
-            if panes.dash is not None and not panes.joined:
-                print(
-                    f"[INFO] [{PROG}]: dashboard in tmux session "
-                    f"'{panes.session}' -- tmux attach -t {panes.session}"
-                )
-            yield panes
-        finally:
-            undo()
-            news = panes.finish()
-            if news:
-                print(f"[INFO] [{PROG}]: {news}")
-    except tm.TmuxError as exc:
-        raise TlaunchError(str(exc)) from None
+            from libtmux_easy.processes import Processes
+        except ImportError as exc:
+            raise TlaunchError(
+                f"tlaunch needs libtmux_easy ({exc}): install its .deb, or "
+                "PYTHONPATH=~/projects/libtmux_easy/src"
+            ) from None
+        prefix = ""
+        if any(own[flag] for flag in TMUX_FLAGS):
+            join = bool(os.environ.get("TMUX")) and not own["tmux_session"]
+            name = own["tmux_session"] or f"tlaunch-{stem}-{os.getpid()}"
+            session = engine.open_tmux(name, own["tmux_dash"], join=join)
+            prefix = stem if join else ""
+        procs = Processes(
+            stem, tmux=session, prefix=prefix, log_dir=log_dir, echo=["*"],
+        )  # fmt: skip
 
-
-def run_launch(
-    typed: TypedLaunch,
-    config: Any,
-    own: dict[str, Any],
-    ros: rc.RosConfig,
-    sources: dict,
-    label: str,
-) -> int:
-    import launch
-    from launch.actions import SetLaunchConfiguration
-
-    actions = []
-    if own["launch_prefix"]:
-        actions.append(SetLaunchConfiguration("launch-prefix", own["launch_prefix"]))
-    if own["launch_prefix_filter"]:
-        actions.append(
-            SetLaunchConfiguration("launch-prefix-filter", own["launch_prefix_filter"])
+    run = engine.Run(
+        procs,
+        label=stem,
+        ros=ros,
+        params_dir=os.path.join(log_dir, "params"),
+        log_levels=own["log_level"],
+        log_commands=own["log_commands"],
+        launch_prefix=own["launch_prefix"],
+        launch_prefix_filter=own["launch_prefix_filter"],
+    )
+    if not own["dry_run"]:
+        saved = save_effective(
+            effective.render(typed.config_type, config, sources, ros, label), label
         )
-    actions.extend(build_actions(typed, config, ros, own))
-
-    # Written after the build, so the node patterns' matches are known. Printed
-    # in launch's own style, before its output starts scrolling.
-    saved = save_effective(
-        effective.render(typed.config_type, config, sources, ros, label), label
-    )
-    print(f"[INFO] [{PROG}]: effective config written to {saved}")
-
-    # Watch every process this run starts: pid, command, exit status (Q27). The
-    # handlers go first so nothing can start before they are registered.
-    monitor = mon.Monitor()
-    publisher = mon.Diagnostics(monitor) if own["diagnostics"] else None
-
-    service = launch.LaunchService(
-        noninteractive=own["noninteractive"], debug=own["debug"]
-    )
-    service.include_launch_description(
-        launch.LaunchDescription(monitor.handlers() + actions)
-    )
-    from . import tmux as tm
-
-    tm.attach_run(service, monitor)  # the dashboard's stop/shutdown, if any
-    if publisher is not None:
-        publisher.start()
-    try:
-        code = service.run()
-    finally:
-        if publisher is not None:
-            publisher.stop()
-    return mon.report(monitor, code, prog=PROG)
-
-
-def run_script(
-    typed: TypedScript,
-    config: Any,
-    own: dict[str, Any],
-    ros: rc.RosConfig,
-    sources: dict,
-    label: str,
-) -> int:
-    """Run an imperative launch script (Q26): the script body drives a session.
-
-    Unlike a launch, nothing is built up front -- the script builds and starts
-    stages as it goes -- so the effective config is saved before the run, and
-    its node-pattern matches are not known at that point.
-    """
-    from . import session as sess
-
-    saved = save_effective(
-        effective.render(typed.config_type, config, sources, ros, label), label
-    )
-    print(f"[INFO] [{PROG}]: effective config written to {saved}")
-
-    try:
-        return sess.run_session(
-            lambda session: typed.run(session, config),
-            ros=ros,
-            noninteractive=own["noninteractive"],
-            debug=own["debug"],
-            diagnostics=own["diagnostics"],
-        )
-    except sess.SessionError as exc:
-        raise TlaunchError(str(exc)) from None
+        print(f"[INFO] [{PROG}]: effective config written to {saved}")
+    hint = None
+    if session is not None and not join:
+        hint = f"tmux session: tmux attach -t {session.session_name}"
+    code = engine.execute(typed, config, run, attach_hint=hint)
+    if own["dry_run"] and code == 0:
+        print(f"{PROG}: dry run, {len(run.plan)} process(es):")
+        for item in run.plan:
+            print(f"  {item.name}\n      {item.command}")
+    if procs is not None:
+        print(f"[INFO] [{PROG}]: process logs: {log_dir}")
+    if session is not None:
+        note = engine.close_tmux(session, keep=code != 0 or own["tmux_dash"], joined=join)
+        if note:
+            print(f"[INFO] [{PROG}]: {note}")
+    warn_unmatched(ros, own)
+    return code
 
 
 def print_general_help() -> None:
@@ -760,6 +667,7 @@ def print_general_help() -> None:
   {PROG} my_pkg my_launch.py -h
   {PROG} my_pkg my_launch.py --config my_pkg:config/site.yaml --robot.name r2
   {PROG} my_pkg my_launch.py --show-config
+  {PROG} my_pkg my_launch.py --dry-run
   {PROG} my_pkg my_launch.py --tmux-dash""",
     )
     add_own_args(parser)
@@ -823,7 +731,7 @@ def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
     files = own["config"]
 
     try:
-        own["log_level"] = commands.check_levels(own["log_level"])
+        own["log_level"] = check_levels(own["log_level"])
     except ValueError as exc:
         raise TlaunchError(str(exc)) from None
 
@@ -835,26 +743,17 @@ def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
 
     label = " ".join(target)
     if own["show_config"]:
-        if ros and isinstance(typed, TypedLaunch):
-            # Building is what resolves the node patterns, so do it (the actions
-            # are discarded) to report which nodes each section actually reached.
-            build_actions(typed, config, ros, own)
+        if ros:
+            # A dry run is what resolves the node patterns: report which nodes
+            # each section actually reached.
+            typed.plan(config, ros)
+            warn_unmatched(ros, own)
         print(
             effective.render(typed.config_type, config, sources, ros, label),
             end="",
         )
         return 0
-
-    # The command-line hook goes in before the panes' one, so it sees (and
-    # logs) the real command rather than its pane stand-in.
-    undo = commands.patch(own["log_level"], own["log_commands"])
-    try:
-        with panes_for(own, target):
-            if isinstance(typed, TypedScript):
-                return run_script(typed, config, own, ros, sources, label)
-            return run_launch(typed, config, own, ros, sources, label)
-    finally:
-        undo()
+    return run(typed, config, own, ros, sources, label, target)
 
 
 def main(argv: list[str] | None = None, *, target: TypedTarget | None = None) -> int:

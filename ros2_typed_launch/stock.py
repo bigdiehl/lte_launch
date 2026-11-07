@@ -4,16 +4,20 @@
 
 Each schema field with a flag becomes a ``DeclareLaunchArgument`` named by its
 dotted path (required fields get no default, so stock reports them). One more,
-``tlaunch_config``, takes config files, ';'-separated. At launch time the given
-arguments run through the same pipeline as ``tlaunch``: layering (defaults <
-files < arguments), validation, ``$(var ...)``, node sections. What tlaunch adds
-around a run is not there: monitoring, panes, ``--show-config``.
+``tlaunch_config``, takes config files, ';'-separated. The arguments are
+validated here, at include time, then the launch runs as **one process**:
+``tlaunch`` with the given values in a generated config file. Stock sees that
+process start, stop on Ctrl-C, and exit non-zero if anything in it died; its
+nodes are tlaunch's, not stock's.
 """
 
 from __future__ import annotations
 
 import argparse
 import difflib
+import inspect
+import os
+import tempfile
 
 import yaml
 
@@ -48,9 +52,30 @@ def _own_defaults() -> dict:
     return {k[1:]: v for k, v in vars(parser.parse_args([])).items()}
 
 
+def target_args(typed: TypedLaunch) -> list[str]:
+    """How ``tlaunch`` addresses this launch: ``<package> <dotted.module>``, or
+    the file's path when it is not in a package."""
+    module = typed.factory.__module__
+    package, _, rest = module.partition(".")
+    if rest and not module.startswith("_tlaunch_"):
+        return [package, rest]
+    return [inspect.getfile(typed.factory)]
+
+
+def _nest(dotted: dict) -> dict:
+    out: dict = {}
+    for key, value in dotted.items():
+        *parents, leaf = key.split(".")
+        node = out
+        for p in parents:
+            node = node.setdefault(p, {})
+        node[leaf] = value
+    return out
+
+
 def description(typed: TypedLaunch):
     from launch import LaunchDescription
-    from launch.actions import DeclareLaunchArgument, OpaqueFunction
+    from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
 
     every = schema.walk(typed.config_type)
     specs = [s for s in every if s.supported]
@@ -76,9 +101,7 @@ def description(typed: TypedLaunch):
             lines = []
             for n in sorted(typos):
                 if n in flagless:
-                    lines.append(
-                        f"  {n}: has no launch argument; set it in {CONFIG_ARG}"
-                    )
+                    lines.append(f"  {n}: has no launch argument; set it in {CONFIG_ARG}")
                     continue
                 close = difflib.get_close_matches(n, names, n=1)
                 lines.append(
@@ -87,22 +110,23 @@ def description(typed: TypedLaunch):
                 )
             raise cli.TlaunchError(f"typed launch '{typed.name}':\n" + "\n".join(lines))
 
-    def build(context):
+    def run(context):
         values = context.launch_configurations
-        files = [
-            ref.strip() for ref in values.get(CONFIG_ARG, "").split(";") if ref.strip()
-        ]
-        own = _own_defaults()
-        try:
-            fields = {
-                s.dotted: _value(s, values[s.dotted])
-                for s in specs
-                if s.dotted in given
-            }
-            config, _, ros = cli.configure(typed, files, fields, own, as_flags=False)
-            return cli.build_actions(typed, config, ros, own)
+        files = [r.strip() for r in values.get(CONFIG_ARG, "").split(";") if r.strip()]
+        fields = {s.dotted: _value(s, values[s.dotted]) for s in specs if s.dotted in given}
+        try:  # fail here, at include time, with the issues listed
+            cli.configure(typed, files, fields, _own_defaults(), as_flags=False)
         except cli.TlaunchError as exc:
             raise cli.TlaunchError(f"typed launch '{typed.name}': {exc}") from None
+        cmd = ["tlaunch", *target_args(typed)]
+        for ref in files:
+            cmd += ["--config", ref]
+        if fields:
+            fd, path = tempfile.mkstemp(prefix=f"tlaunch-{typed.name}-", suffix=".yaml")
+            with os.fdopen(fd, "w") as f:
+                yaml.safe_dump({"launch_args": _nest(fields)}, f)
+            cmd += ["--config", path]
+        return [ExecuteProcess(cmd=cmd, name=typed.name, output="screen")]
 
     declared = [
         DeclareLaunchArgument(
@@ -128,5 +152,5 @@ def description(typed: TypedLaunch):
         )
     )
     return LaunchDescription(
-        [OpaqueFunction(function=snapshot), *declared, OpaqueFunction(function=build)]
+        [OpaqueFunction(function=snapshot), *declared, OpaqueFunction(function=run)]
     )

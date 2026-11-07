@@ -78,11 +78,7 @@ def test_resolve_by_package(fake_package):
     # main_launch.py does `from .child_launch import ChildConfig, child` and
     # includes it; if that relative import failed, loading would have raised.
     typed = loader.resolve(fake_package, "main_launch.py")
-    from launch.actions import GroupAction
-
-    [group] = typed.build(typed.config_type(n=7))
-    assert isinstance(group, GroupAction)
-    assert "child-7" in group.get_sub_entities()
+    assert [p.name for p in typed.plan(typed.config_type(n=7))] == ["main:child-7"]
 
 
 def test_ambiguous_names_and_import_cycles_are_clear_errors(tmp_path, monkeypatch):

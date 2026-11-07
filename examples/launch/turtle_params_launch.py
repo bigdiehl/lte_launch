@@ -35,16 +35,10 @@ class ParamsDemoConfig(BaseModel):
 
 @launch(config=ParamsDemoConfig)
 def turtle_params(config: ParamsDemoConfig):
-    return [
-        node(
-            package="turtlesim",
-            executable="turtlesim_node",
-            name=config.node_name,
-            namespace=config.namespace,
-            params=config.turtlesim,
-            output="screen",
-        )
-    ]
-
-
-generate_launch_description = turtle_params.generate_launch_description
+    node(
+        "turtlesim",
+        "turtlesim_node",
+        name=config.node_name,
+        namespace=config.namespace,
+        params=config.turtlesim,
+    )

@@ -37,9 +37,8 @@ import sys
 
 from .core import TypedTarget
 
-#: Filename suffixes tlaunch searches a package for: a typed launch, or an
-#: imperative script (see session.py). Both are addressed the same way.
-TARGET_SUFFIXES = ("_launch.py", "_script.py")
+#: Filename suffixes tlaunch searches a package for.
+TARGET_SUFFIXES = ("_launch.py",)
 
 
 class LaunchLookupError(Exception):
@@ -62,7 +61,7 @@ def _typed_target_from_module(module, where: str) -> TypedTarget:
     if not isinstance(typed, TypedTarget):
         raise LaunchLookupError(
             f"'{where}' is not a typed launch file (tlaunch only runs files built "
-            "with @launch or @script); use 'ros2 launch' for it"
+            "with @launch); use 'ros2 launch' for it"
         )
     return typed
 
@@ -103,7 +102,7 @@ def _load_from_path(path: str) -> TypedTarget:
 
 def _find_launch_files(package_module) -> dict[str, list[str]]:
     """stem ("turtle_demo_launch") -> dotted module paths of every target file
-    (``*_launch.py`` or ``*_script.py``) anywhere under the package, however
+    (``*_launch.py``) anywhere under the package, however
     deep (e.g. in a nested launch/ subpackage). A stem maps to more than one
     path only if two files in the package happen to share a name."""
     found: dict[str, list[str]] = {}

@@ -1,17 +1,14 @@
+"""include(): a typed launch is a function call; a stock file is one process.
+Stock including a typed launch: one tlaunch process."""
+
 import enum
 from pathlib import Path
 
 import pytest
+import yaml
+from pydantic import BaseModel, Field
 
-pytest.importorskip("launch")
-pytest.importorskip("launch_ros")
-
-from launch.actions import GroupAction  # noqa: E402
-from pydantic import BaseModel, Field  # noqa: E402
-
-from ros2_typed_launch import RosParams, include, launch, node  # noqa: E402
-from ros2_typed_launch import ros_config as rc  # noqa: E402
-from ros2_typed_launch.actions import fqn_of, stock_arg, stock_args  # noqa: E402
+from ros2_typed_launch import engine, include, launch, process, stock_arg
 
 
 class ChildConfig(BaseModel):
@@ -24,17 +21,26 @@ class OtherConfig(BaseModel):
 
 @launch(config=ChildConfig)
 def child(config):
-    return ["action-%d" % config.n]
+    process(f"child{config.n}", ["echo", str(config.n)])
+    return config.n
+
+
+@launch(config=ChildConfig)
+def parent(config):
+    assert include(child, ChildConfig(n=3)) == 3
+    assert include(child, n=4) == 4
+    include("demo_nodes_cpp", "talker.launch.py", name="talk", use_sim_time=True)
 
 
 def test_include():
-    group = include(child, ChildConfig(n=3))
-    assert isinstance(group, GroupAction)
-    # A scoped GroupAction wraps its children in push/pop scope entities.
-    assert "action-3" in group.get_sub_entities()
-
-    with pytest.raises(TypeError, match="ChildConfig expected, got OtherConfig"):
-        include(child, OtherConfig())
+    plan = parent.plan(ChildConfig())
+    assert [(p.name, p.command) for p in plan] == [
+        ("parent:child3", "echo 3"),
+        ("parent:child4", "echo 4"),
+        ("parent:talk", "ros2 launch demo_nodes_cpp talker.launch.py use_sim_time:=true"),
+    ]
+    with engine.active(engine.Run(None, label="x")), pytest.raises(TypeError, match="include"):
+        include(42)
 
 
 # --------------------------------------------------------- stock interop
@@ -51,20 +57,27 @@ class StockConfig(BaseModel):
 
 @launch(config=StockConfig)
 def stocked(config):
-    return [config]  # the built config, to look at
+    pass
 
 
 def run_stock(typed, **args):
     """What stock does with an include: set the arguments, then run each entity.
-    -> the launch's actions (here: its config)."""
+    -> (the tlaunch command, its generated launch_args or None)."""
     from launch import LaunchContext
 
     context = LaunchContext()
     context.launch_configurations.update(args)
-    *head, build = typed.generate_launch_description().entities
+    *head, run = typed.generate_launch_description().entities
     for entity in head:
         entity.visit(context)
-    return build.visit(context)[0]
+    (proc,) = run.visit(context)
+    from launch.utilities import perform_substitutions
+
+    cmd = [perform_substitutions(context, part) for part in proc.cmd]
+    generated = None
+    if cmd[-2] == "--config" and "tlaunch-stocked-" in cmd[-1]:
+        generated = yaml.safe_load(open(cmd[-1]))["launch_args"]
+    return cmd, generated
 
 
 def test_stock_launch_includes_a_typed_one(tmp_path):
@@ -75,145 +88,41 @@ def test_stock_launch_includes_a_typed_one(tmp_path):
         for e in stocked.generate_launch_description().entities
         if isinstance(e, DeclareLaunchArgument)
     }
-    assert list(declared) == [
-        "name",
-        "inner.r",
-        "inner.enabled",
-        "inner.tags",
-        "tlaunch_config",
-    ]
+    assert list(declared) == ["name", "inner.r", "inner.enabled", "inner.tags", "tlaunch_config"]
     assert declared["name"].default_value is None  # required: stock checks it
     assert declared["inner.r"].description == "Red (>=0, <=255)"
 
-    config = run_stock(stocked, name="a", **{"inner.r": "7", "inner.tags": "[x, y]"})
-    assert config == StockConfig(name="a", inner=Inner(r=7, tags=["x", "y"]))
+    cmd, generated = run_stock(stocked, name="a", **{"inner.r": "7", "inner.tags": "[x, y]"})
+    assert cmd[:2] == ["tlaunch", __file__]  # not in a package: by path
+    assert generated == {"name": "a", "inner": {"r": "7", "tags": ["x", "y"]}}
 
-    # defaults < files < arguments; a declared default is not "given".
+    # defaults < files < arguments: the files first, the arguments last.
     extra = tmp_path / "extra.yaml"
     extra.write_text("launch_args: {inner: {r: 5, enabled: false}}\n")
-    config = run_stock(stocked, name="a", tlaunch_config=str(extra))
-    assert (config.inner.r, config.inner.enabled) == (5, False)
-    config = run_stock(stocked, name="a", tlaunch_config=str(extra), **{"inner.r": "9"})
-    assert config.inner.r == 9
+    cmd, generated = run_stock(stocked, name="a", tlaunch_config=str(extra))
+    assert cmd[cmd.index("--config") + 1] == str(extra)
+    assert generated == {"name": "a"}
 
-    # Errors read as tlaunch's do, named by argument.
-    with pytest.raises(
-        Exception, match=r"(?s)typed launch 'stocked'.*inner\.r: ensure"
-    ):
+    # Errors read as tlaunch's do, named by argument, at include time.
+    with pytest.raises(Exception, match=r"(?s)typed launch 'stocked'.*inner\.r: ensure"):
         run_stock(stocked, name="a", **{"inner.r": "999"})
     with pytest.raises(Exception, match=r"did you mean 'inner\.enabled'"):
         run_stock(stocked, name="a", **{"inner.enabld": "x"})
 
-    # A script has no launch description.
-    from ros2_typed_launch import script
 
-    @script(config=ChildConfig)
-    def scripted(session, config):
-        pass
+def test_stock_target_args():
+    from ros2_typed_launch.examples import turtle_demo
+    from ros2_typed_launch.stock import target_args
 
-    with pytest.raises(RuntimeError, match="run it with 'tlaunch'"):
-        scripted.generate_launch_description()
+    assert target_args(turtle_demo) == ["ros2_typed_launch", "examples.turtle_demo_launch"]
 
 
 class Color(enum.Enum):
     RED = "red"
 
 
-def test_stock_args():
+def test_stock_arg():
     assert stock_arg(True) == "true" and stock_arg(False) == "false"
     assert stock_arg(Color.RED) == "red"
     assert stock_arg(3) == "3" and stock_arg(1.5) == "1.5"
     assert stock_arg("x") == "x" and stock_arg(Path("/tmp/a")) == "/tmp/a"
-
-    with pytest.raises(TypeError, match="no stock launch argument string form"):
-        stock_arg([1, 2])
-
-    assert stock_args({"name": "t1", "use_sim_time": True}) == [
-        ("name", "t1"),
-        ("use_sim_time", "true"),
-    ]
-
-
-# ------------------------------------------------------------- node() wrapper
-class DemoParams(RosParams):
-    background_r: int = Field(69, ge=0, le=255)
-    holonomic: bool = False
-
-
-def params_of(action) -> dict:
-    """The parameters the node will actually receive.
-
-    Read through launch_ros's own `evaluate_parameters`, not off the action's
-    internals: stock Node normalizes a dict's keys into Substitution objects, so
-    this asserts the real launch-time result rather than our input.
-    """
-    from launch import LaunchContext
-    from launch_ros.utilities import evaluate_parameters
-
-    merged = {}
-    for entry in evaluate_parameters(LaunchContext(), action._Node__parameters or []):
-        merged.update(entry)
-    return merged
-
-
-def remaps_of(action) -> list[tuple[str, str]]:
-    from launch import LaunchContext
-    from launch.utilities import perform_substitutions
-
-    ctx = LaunchContext()
-    return [
-        (perform_substitutions(ctx, a), perform_substitutions(ctx, b))
-        for a, b in action._Node__remappings or []
-    ]
-
-
-def test_node_typed_params():
-    assert fqn_of("talker", None) == "/talker"
-    assert fqn_of("talker", "ns") == "/ns/talker"
-    assert fqn_of("talker", "/ns/") == "/ns/talker"
-    assert fqn_of(None, "ns") is None  # unknowable without a name
-
-    action = node("turtlesim", "turtlesim_node", name="t", params=DemoParams())
-    assert params_of(action) == {"background_r": 69, "holonomic": False}
-
-    class NotParams(BaseModel):
-        x: int = 1
-
-    with pytest.raises(TypeError, match="takes a RosParams model"):
-        node("p", "e", name="t", params=NotParams())
-
-
-def test_node_untyped_sections(capsys):
-    # No active RosConfig: the wrapper still works, it just adds nothing.
-    action = node("turtlesim", "turtlesim_node", name="t")
-    assert params_of(action) == {} and remaps_of(action) == []
-
-    ros = rc.RosConfig(
-        [
-            rc.Section("/**", {"use_sim_time": True}, {"/in": "/out"}, "f.yaml"),
-            rc.Section("/ns/other", {"nope": 1}, {}, "f.yaml"),
-        ]
-    )
-    with rc.active(ros):
-        action = node("turtlesim", "turtlesim_node", name="t", namespace="ns")
-    assert params_of(action) == {"use_sim_time": True}
-    assert remaps_of(action) == [("/in", "/out")]
-
-    ros = rc.RosConfig([rc.Section("/**", {"use_sim_time": True}, {}, "f.yaml")])
-    with rc.active(ros):
-        with pytest.raises(ValueError, match="strict=True"):
-            node("turtlesim", "turtlesim_node", name="t", strict=True)
-
-    def build(**flags):
-        section = rc.Section("/**", {"background_r": 1}, {}, "f.yaml")
-        with rc.active(rc.RosConfig([section], **flags)):
-            action = node("turtlesim", "turtlesim_node", name="t", params=DemoParams())
-        return action, section, capsys.readouterr().err
-
-    action, section, err = build()
-    assert params_of(action)["background_r"] == 69  # typed value wins
-    assert err == ""  # advisory only: quiet
-    assert section.shadowed == {"background_r"}  # but recorded, for --show-config
-
-    _, _, err = build(debug=True)
-    assert "background_r" in err and "typed value wins" in err

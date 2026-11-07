@@ -12,8 +12,15 @@
 
   <!-- ament_index_python: package-relative config lookups (config.py, the -config flag) -->
   <exec_depend>ament_index_python</exec_depend>
+  <!-- launch: only so a stock launch file can include a typed one (stock.py) -->
   <exec_depend>launch</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
+  <!-- rclpy: graph waits and component loading, in the engine itself -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rcl_interfaces</exec_depend>
+  <exec_depend>composition_interfaces</exec_depend>
+  <exec_depend>rclcpp_components</exec_depend>
+  <!-- The process engine: libtmux_easy's .deb (not a rosdep key yet) -->
+  <exec_depend>python3-libtmux-easy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <!--
     Pydantic 1: schema.py targets the v1 API on purpose, matching what rosdep's
@@ -27,6 +34,7 @@
   <!-- The examples (examples/) run turtlesim and tf2; the library needs neither. -->
   <test_depend>turtlesim</test_depend>
   <test_depend>tf2_ros</test_depend>
+  <test_depend>composition</test_depend>
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>python3-pytest</test_depend>
 

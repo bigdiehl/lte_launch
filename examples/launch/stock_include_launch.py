@@ -1,20 +1,12 @@
 # stock_include_launch.py -- a typed front end for a traditional (untyped)
-# ros2 launch file: config comes from our schema, is converted to plain
-# name:=value strings with actions.stock_args(), and passed to
-# IncludeLaunchDescription exactly as `ros2 launch` itself would. See
-# stock_launch/spawn_turtle.launch.py (the included file) and
+# ros2 launch file: config comes from our schema, and include() runs the stock
+# file as one `ros2 launch` process with name:=value arguments (stock_arg()
+# converts each value). See stock_launch/spawn_turtle.launch.py and
 # working/design-notes.md, Q17.
 
-import os
-
-from ament_index_python.packages import get_package_share_directory
 from pydantic import BaseModel, Field
 
-from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-
-from ros2_typed_launch import launch
-from ros2_typed_launch.actions import stock_args
+from ros2_typed_launch import include, launch
 
 
 class StockIncludeConfig(BaseModel):
@@ -27,23 +19,10 @@ class StockIncludeConfig(BaseModel):
 
 @launch(config=StockIncludeConfig)
 def stock_include(config: StockIncludeConfig):
-    stock_file = os.path.join(
-        get_package_share_directory("ros2_typed_launch"),
-        "launch",
+    include(
+        "ros2_typed_launch",
         "spawn_turtle.launch.py",
+        namespace=config.namespace,
+        use_sim_time=config.use_sim_time,
+        background_r=config.background_r,
     )
-    return [
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(stock_file),
-            launch_arguments=stock_args(
-                {
-                    "namespace": config.namespace,
-                    "use_sim_time": config.use_sim_time,
-                    "background_r": config.background_r,
-                }
-            ),
-        ),
-    ]
-
-
-generate_launch_description = stock_include.generate_launch_description

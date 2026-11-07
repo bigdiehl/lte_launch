@@ -14,17 +14,8 @@ Status tags on open questions: **OPEN** (needs a decision) · **PARTLY** (part b
 
 ## Principles
 
-1. The schema is the contract: a launch is a function from a validated config object to launch
-   actions; CLI, YAML, JSON Schema and help are adapters around it.
-2. One spelling everywhere: field path in code = flag = YAML key (`planner.max_iterations`).
-3. Validate before anything starts; name the flag or key in every error.
-4. Silent acceptance of a mistake is a bug (unknown flags, unknown YAML keys, name collisions).
-5. Config values are real Python values, not launch-time substitutions; substitutions stay
-   available *inside* stock actions for genuinely launch-time values.
-6. Stock launch actions pass through untouched; tlaunch only adds `@launch`/`include`/`load_launch`.
-7. All Pydantic access lives in `schema.py` — keeps a future backend swap (Q16) cheap.
-8. Prefer a plain `import` over a dynamic lookup when the target is known at write time;
-   `load_launch`/`resolve()` are for genuinely dynamic or cross-package addressing.
+Moved to `../docs/goals.md` (goals G1-G7, principles 1-9). Direction and approaches:
+`vision.md`.
 
 ## Decided
 

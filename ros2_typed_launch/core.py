@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from . import ros_config as rc
+
 
 class TypedTarget:
-    """What ``tlaunch`` can run: a function plus the config model it takes.
-
-    Two kinds, sharing their whole command line (schema-generated flags,
-    ``--config`` layering, validation): a **launch**, which returns actions for
-    launch to run, and a **script**, which drives a session imperatively.
-    """
+    """What ``tlaunch`` can run: a function plus the config model it takes."""
 
     def __init__(self, config_type: type, factory: Callable):
         self.config_type = config_type
@@ -31,94 +28,76 @@ class TypedTarget:
 
 
 class TypedLaunch(TypedTarget):
-    """A launch function together with the config model it takes."""
+    """A launch whose body starts processes as it runs (``engine.py``).
 
-    def build(self, config: Any) -> list:
-        """Run the launch function: config object -> list of launch actions."""
-        return list(self.factory(config))
+    Besides ``tlaunch``, lte_launch_test runs it three ways:
 
-
-class TypedScript(TypedTarget):
-    """A script function together with the config model it takes.
-
-    The function takes ``(session, config)`` and runs top to bottom on its own
-    thread while a launch service runs on the main one; see ``session.py``.
+    * as one process: ``procs.start("sys:up", "tlaunch pkg f_launch.py", ready=r"\\[tlaunch\\]: up")``
+    * ``procs.build(target.build, **fields)`` or ``target.start(procs, **fields)``:
+      every process of the body is a process of the test's group
+    * ``for name, cmd in target.panes(**fields): procs.start(name, cmd)``
     """
 
-    def run(self, session: Any, config: Any) -> Any:
-        return self.factory(session, config)
+    def start(self, procs, config: Any = None, /, **fields):
+        """Run the body on ``procs`` (a libtmux_easy ``Processes``): each
+        process it starts is one of the group's, with its own health, log and
+        restart. Returns once the body has; the group's owner stops them
+        (``procs.close()``). -> the ``engine.Run``."""
+        from . import engine
 
+        config = engine.make_config(self.config_type, config, fields)
+        run = engine.Run(procs, label=self.name)
+        try:
+            with engine.active(run):
+                self.factory(config)
+        finally:
+            run.detach()  # from here on the group's owner watches health
+        return run
 
-def _stock_entry_point(target: TypedLaunch) -> Callable:
-    """The ``generate_launch_description`` tlaunch finds a launch through.
+    def build(self, session, config: Any = None, /, **fields):
+        """``procs.build(target.build, **fields)``: as ``start()``, on the
+        group behind a libtmux_easy build session."""
+        return self.start(session.processes, config, **fields)
 
-    Stock launch calls the same name, and gets a real ``LaunchDescription``: one
-    launch argument per field (``stock.py``). So a stock file can include a typed
-    one, and ``ros2 launch`` can run it.
-    """
+    def panes(self, config: Any = None, /, **fields) -> list[tuple[str, str]]:
+        """``[("window:name", command), ...]``: a dry run, nothing starts."""
+        from . import engine
 
-    def generate_launch_description():
-        from .stock import description
+        config = engine.make_config(self.config_type, config, fields)
+        return [(p.name, p.command) for p in self.plan(config)]
 
-        return description(target)
+    def plan(self, config: Any, ros: rc.RosConfig | None = None) -> list:
+        """Dry-run the body with ``config``; -> the processes it would start."""
+        from . import engine
 
-    generate_launch_description.typed_target = target
-    return generate_launch_description
-
-
-def _entry_point(target: TypedTarget, kind: str) -> Callable:
-    """The ``generate_launch_description`` tlaunch finds a script through.
-
-    A script drives a session and has no launch description; stock launch finds
-    the name and is told why, rather than reporting an empty launch file.
-    """
-
-    def generate_launch_description():
-        raise RuntimeError(
-            f"'{target.name}' is a typed {kind} and cannot run under "
-            "'ros2 launch'; run it with 'tlaunch'"
-        )
-
-    generate_launch_description.typed_target = target
-    return generate_launch_description
+        run = engine.Run(None, label=self.name, ros=ros)
+        with engine.active(run):
+            self.factory(config)
+        return run.plan
 
 
 def launch(*, config: type):
-    """Decorator turning a typed Python function into a launch.
+    """Decorator: a typed launch. The function takes the validated config and
+    starts what it needs (``node()``, ``include()``, ...).
 
-    The function receives the validated config object and returns a list of
-    launch actions. Run the file with ``tlaunch``.
+    Also exports ``generate_launch_description`` from the module (unless it has
+    one), which is how ``tlaunch`` finds the launch, and which lets a stock
+    launch file include it (``stock.py``).
     """
 
     def decorator(factory: Callable) -> TypedLaunch:
         typed = TypedLaunch(config_type=config, factory=factory)
-        typed.generate_launch_description = _stock_entry_point(typed)
-        return typed
 
-    return decorator
+        def generate_launch_description():
+            from .stock import description
 
+            return description(typed)
 
-def script(*, config: type):
-    """Decorator turning a typed Python function into an imperative launch script.
-
-        @script(config=BringupConfig)
-        def bringup(session, config):
-            stage = session.start(some_launch, SomeConfig())
-            stage.wait_started()
-            ...
-
-        if __name__ == "__main__":
-            bringup.main()
-
-    The function receives a ``Session`` and the validated config object, and runs
-    top to bottom: it starts things, waits for them, and stops them. Run it
-    either way -- ``tlaunch <package> <file>`` or ``python3 <file>`` (that is
-    what ``main()`` is for). Returning an int sets the exit code.
-    """
-
-    def decorator(factory: Callable) -> TypedScript:
-        typed = TypedScript(config_type=config, factory=factory)
-        typed.generate_launch_description = _entry_point(typed, "script")
+        generate_launch_description.typed_target = typed
+        typed.generate_launch_description = generate_launch_description
+        factory.__globals__.setdefault(
+            "generate_launch_description", generate_launch_description
+        )
         return typed
 
     return decorator
