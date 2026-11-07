@@ -120,6 +120,22 @@ def _is_model(t: Any) -> bool:
     return isinstance(t, type) and issubclass(t, BaseModel)
 
 
+def config_model(fn: Any) -> type | None:
+    """The model a launch function's first parameter is annotated with, or
+    None (string annotations resolved in the function's module)."""
+    import inspect
+    import typing
+
+    params = list(inspect.signature(fn).parameters)
+    if not params:
+        return None
+    try:
+        hint = typing.get_type_hints(fn).get(params[0])
+    except Exception:  # an unresolvable annotation
+        return None
+    return hint if _is_model(hint) else None
+
+
 class _Cls(NamedTuple):
     kind: str
     type_name: str

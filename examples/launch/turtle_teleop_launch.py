@@ -14,7 +14,7 @@ class TeleopConfig(BaseModel):
     namespace: str = ""
 
 
-@launch(config=TeleopConfig)
+@launch
 def turtle_teleop(config: TeleopConfig):
     with window("input"):
         node("turtlesim", "turtle_teleop_key", name="teleop", namespace=config.namespace)

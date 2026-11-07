@@ -51,7 +51,7 @@ class TurtleDemoConfig(BaseModel):
     localization: LocalizationToggle = LocalizationToggle()
 
 
-@launch(config=TurtleDemoConfig)
+@launch
 def turtle_demo(config: TurtleDemoConfig):
     ts = config.turtlesim
     sim = node(

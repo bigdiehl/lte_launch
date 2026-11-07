@@ -33,7 +33,7 @@ class ParamsDemoConfig(BaseModel):
     turtlesim: TurtlesimParams = TurtlesimParams()
 
 
-@launch(config=ParamsDemoConfig)
+@launch
 def turtle_params(config: ParamsDemoConfig):
     node(
         "turtlesim",

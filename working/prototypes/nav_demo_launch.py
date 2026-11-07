@@ -31,8 +31,8 @@ class NavConfig(BaseModel):
     planner: PlannerConfig = PlannerConfig()
 
 
-@launch(config=NavConfig)
-def nav(config):
+@launch
+def nav(config: NavConfig):
     return []
 
 

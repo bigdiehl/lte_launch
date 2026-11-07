@@ -35,6 +35,8 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   any package (e.g. `working/prototypes/`) — no parent package, so no relative imports
   (same limitation stock `ros2 launch` has for a bare file). A launch is identified by
   its exported `generate_launch_description`, tagged `.typed_target` by `@launch`.
+  `@launch` takes the model from the first parameter's annotation
+  (`def f(config: MyConfig)`), or `@launch(config=MyConfig)`.
   **Typed launch files only**; untyped ones use stock `ros2 launch`.
 - Config layering: model defaults < `--config` files (repeatable, **deep-merged, later
   wins; lists are replaced, dict keys merge**) < CLI flags; validated *before* anything

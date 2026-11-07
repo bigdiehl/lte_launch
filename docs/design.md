@@ -12,8 +12,8 @@ arguments are adapters around it. The body runs top to bottom: `node()` starts t
 there and returns a handle, waits block, and any death fails the current line.
 
 ```python
-@launch(config=BringupConfig)
-def turtle_bringup(config):
+@launch
+def turtle_bringup(config: BringupConfig):    # the model is the annotation
     with namespace(config.namespace):
         sim = node("turtlesim", "turtlesim_node", name="turtlesim", params=config.turtlesim)
         sim.wait_for_node()

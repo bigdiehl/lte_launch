@@ -42,8 +42,8 @@ class Config(BaseModel):
     namespace: str = "demo"
     background_r: int = Field(0, ge=0, le=255)
 
-@launch(config=Config)
-def turtles(config):
+@launch
+def turtles(config: Config):          # the annotation is the schema
     with namespace(config.namespace):
         sim = node("turtlesim", "turtlesim_node", name="sim",
                    params={"background_r": config.background_r})   # starts now

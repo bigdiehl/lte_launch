@@ -17,7 +17,7 @@ class StockIncludeConfig(BaseModel):
     background_r: int = Field(69, ge=0, le=255, description="Background red channel")
 
 
-@launch(config=StockIncludeConfig)
+@launch
 def stock_include(config: StockIncludeConfig):
     include(
         "ros2_typed_launch",

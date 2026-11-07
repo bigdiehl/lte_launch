@@ -36,7 +36,7 @@ class BringupConfig(BaseModel):
     )
 
 
-@launch(config=BringupConfig)
+@launch
 def turtle_bringup(config: BringupConfig):
     with namespace(config.namespace):
         sim = node("turtlesim", "turtlesim_node", name="turtlesim", params=config.turtlesim)

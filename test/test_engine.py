@@ -265,3 +265,25 @@ def test_live_required_shutdown_respawn(tmp_path, capsys):
     out = capsys.readouterr().out
     assert out.count("respawning in 0.1 s") == 2
     assert code == 1 and "live:flaky died unexpectedly" in out  # the third end
+
+
+class Annotated_(BaseModel):
+    x: int = 1
+
+
+def test_launch_decorator_forms():
+    @launch
+    def bare(config: Annotated_):
+        pass
+
+    @launch(config=Annotated_)
+    def named(config):
+        pass
+
+    assert bare.config_type is Annotated_ and named.config_type is Annotated_
+    assert bare.generate_launch_description.typed_target is bare
+    with pytest.raises(TypeError, match="annotate its first parameter"):
+
+        @launch
+        def missing(config):
+            pass

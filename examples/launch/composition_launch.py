@@ -26,7 +26,7 @@ class CompositionConfig(BaseModel):
     topic: str = Field("chatter", description="What the listener subscribes to")
 
 
-@launch(config=CompositionConfig)
+@launch
 def composition(config: CompositionConfig):
     with namespace(config.namespace):
         into = config.container

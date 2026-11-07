@@ -76,9 +76,15 @@ class TypedLaunch(TypedTarget):
         return run.plan
 
 
-def launch(*, config: type):
+def launch(factory: Callable | None = None, *, config: type | None = None):
     """Decorator: a typed launch. The function takes the validated config and
     starts what it needs (``node()``, ``include()``, ...).
+
+        @launch
+        def bringup(config: BringupConfig): ...      # model from the annotation
+
+        @launch(config=BringupConfig)                 # or named
+        def bringup(config): ...
 
     Also exports ``generate_launch_description`` from the module (unless it has
     one), which is how ``tlaunch`` finds the launch, and which lets a stock
@@ -86,7 +92,16 @@ def launch(*, config: type):
     """
 
     def decorator(factory: Callable) -> TypedLaunch:
-        typed = TypedLaunch(config_type=config, factory=factory)
+        from . import schema
+
+        model = config or schema.config_model(factory)
+        if model is None:
+            raise TypeError(
+                f"@launch {factory.__name__}: annotate its first parameter with "
+                f"the config model (def {factory.__name__}(config: MyConfig)), "
+                "or pass @launch(config=MyConfig)"
+            )
+        typed = TypedLaunch(config_type=model, factory=factory)
 
         def generate_launch_description():
             from .stock import description
@@ -100,4 +115,4 @@ def launch(*, config: type):
         )
         return typed
 
-    return decorator
+    return decorator(factory) if factory is not None else decorator

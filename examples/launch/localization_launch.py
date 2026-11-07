@@ -17,7 +17,7 @@ class LocalizationConfig(BaseModel):
     yaw: float = Field(0.0, ge=-3.15, le=3.15, description="Rotation about z (rad)")
 
 
-@launch(config=LocalizationConfig)
+@launch
 def localization(config: LocalizationConfig):
     node(
         "tf2_ros",
