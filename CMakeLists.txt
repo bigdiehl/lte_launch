@@ -20,7 +20,7 @@ install(DIRECTORY examples/stock_launch/ DESTINATION share/${PROJECT_NAME}/launc
 include(cmake/ros2_typed_launch-extras.cmake)
 ros2_typed_launch_install_stubs(${PROJECT_NAME}.examples
   turtle_demo_launch turtle_params_launch turtle_teleop_launch localization_launch
-  turtle_bringup_launch composition_launch)
+  turtle_bringup_launch composition_launch lifecycle_launch)
 
 # tlaunch: a plain script (no setuptools console_scripts indirection needed).
 # Installed twice: lib/${PROJECT_NAME} is where `ros2 run ros2_typed_launch

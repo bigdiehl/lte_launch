@@ -20,6 +20,7 @@ EXAMPLES = {
     "stock_include_launch.py": [],
     "turtle_bringup_launch.py": [f"{CONFIG}/params_demo.yaml"],
     "composition_launch.py": [],
+    "lifecycle_launch.py": [],
 }
 
 

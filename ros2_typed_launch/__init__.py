@@ -19,6 +19,7 @@ from .command import CommandError, stock_arg
 from .composable import Component, Container, component, container, container_at
 from .core import TypedLaunch, launch
 from .engine import LaunchError, Proc, ProcessDied, WaitTimeout
+from .lifecycle import LifecycleNode, lifecycle_at, lifecycle_node
 from .loader import load_launch
 from .schema import RosParams
 
@@ -27,6 +28,7 @@ __all__ = [
     "Component",
     "Container",
     "LaunchError",
+    "LifecycleNode",
     "Proc",
     "ProcessDied",
     "RosParams",
@@ -38,6 +40,8 @@ __all__ = [
     "environment",
     "include",
     "launch",
+    "lifecycle_at",
+    "lifecycle_node",
     "load_launch",
     "log",
     "namespace",

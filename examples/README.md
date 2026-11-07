@@ -18,10 +18,11 @@ stops a run. Without a display: `export QT_QPA_PLATFORM=offscreen`.
 |---|---|
 | `turtle_bringup_launch.py` | the synchronous style: start, wait, log, a window, a crash |
 | `turtle_demo_launch.py` | a launch including two other typed launches |
-| `turtle_teleop_launch.py` | the smallest launch, and an includable child (needs a TTY: `--tmux`) |
+| `turtle_teleop_launch.py` | the smallest launch: the signature is the schema; an includable child (needs a TTY: `--tmux`) |
 | `localization_launch.py` | a child whose config class is embedded in its parent's |
 | `turtle_params_launch.py` | ROS parameters, typed (`RosParams`) and untyped (config sections) |
 | `composition_launch.py` | composable nodes: standalone, our container, or one already running |
+| `lifecycle_launch.py` | a lifecycle node: transitions as lines, a refused one fails the run |
 | `stock_include_launch.py` | including a **traditional** `.launch.py` file |
 | `stock_launch/stock_parent.launch.xml` | a **stock** launch file including a typed one |
 | `lte_test/` | the bringup under lte_launch_test, four ways |
@@ -79,6 +80,19 @@ ros2 component list                               # while it runs
 
 Into a container started elsewhere, the run stays up until Ctrl-C, then unloads its
 components; it fails if that container goes away.
+
+### lifecycle_launch.py
+
+```bash
+tlaunch ros2_typed_launch lifecycle_launch.py                    # configure, activate
+tlaunch ros2_typed_launch lifecycle_launch.py --autostart        # the same, one keyword
+tlaunch ros2_typed_launch lifecycle_launch.py --blink 3          # deactivate, activate again
+tlaunch ros2_typed_launch lifecycle_launch.py --skip_configure ; echo $?   # refused: 1
+tlaunch ros2_typed_launch lifecycle_launch.py --dry-run          # `ros2 lifecycle set` lines
+ros2 lifecycle get /lc/lc_talker                                 # while it runs
+```
+
+At Ctrl-C the talker is sent `shutdown` (its `on_shutdown` runs) before the SIGINT.
 
 ### Stock interop
 
