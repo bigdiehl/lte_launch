@@ -6,7 +6,6 @@ ROS nodes live, tmux and lte_launch_test: examples/lte_test/run.sh.
 
 from __future__ import annotations
 
-import sys
 import time
 
 import pytest
@@ -16,10 +15,11 @@ from pydantic import BaseModel, Field
 from ros2_typed_launch import (
     RosParams, component, container, container_at, environment, launch, namespace,
 )  # fmt: skip
-from ros2_typed_launch import node, process, shutdown, sleep, window
+from ros2_typed_launch import include, node, process, shutdown, sleep, window
 from ros2_typed_launch import command as cmd
 from ros2_typed_launch import engine
 from ros2_typed_launch import ros_config as rc
+from _live import SLOW
 
 
 def test_command_line():
@@ -205,11 +205,6 @@ def test_outside_a_run():
 
 
 # ------------------------------------------------------------------ live
-PY = sys.executable
-# Exits 0 on SIGINT, after 1.5 s.
-SLOW = (f"{PY} -c \"import signal, time; print('up', flush=True); "
-        "signal.signal(signal.SIGINT, lambda *a: (time.sleep(1.5), exit(0))); "
-        "time.sleep(60)\"")  # fmt: skip
 
 
 class Live(BaseModel):
@@ -243,6 +238,7 @@ def run_live(tmp_path, mode):
     return code, time.monotonic() - t, run
 
 
+@pytest.mark.live
 def test_live_death_and_parallel_teardown(tmp_path, capsys):
     code, took, run = run_live(tmp_path, "die")
     out = capsys.readouterr().out
@@ -254,6 +250,7 @@ def test_live_death_and_parallel_teardown(tmp_path, capsys):
     assert not any(p.running for p in run.started)
 
 
+@pytest.mark.live
 def test_live_required_shutdown_respawn(tmp_path, capsys):
     code, _, run = run_live(tmp_path / "r", "required")
     assert code == 0 and "live:main (required) ended" in capsys.readouterr().out
@@ -282,8 +279,27 @@ def test_launch_decorator_forms():
 
     assert bare.config_type is Annotated_ and named.config_type is Annotated_
     assert bare.generate_launch_description.typed_target is bare
-    with pytest.raises(TypeError, match="annotate its first parameter"):
+    @launch
+    def sig(ns: str = "demo", rate: int = Field(5, ge=1), nested: Annotated_ = Annotated_()):
+        """Short help."""
+        seen.update(ns=ns, rate=rate, nested=nested.x)
+
+    seen: dict = {}
+    model = sig.config_type
+    assert model.__name__ == "SigConfig" and model.__doc__ == "Short help."
+    with engine.active(engine.Run(None, label="x")):
+        include(sig, rate=7)
+    assert seen == {"ns": "demo", "rate": 7, "nested": 1}
+    with pytest.raises(engine.LaunchError, match="SigConfig: rate: "):
+        include(sig, rate=0)  # Field constraints hold
+    with pytest.raises(TypeError, match="needs a type annotation"):
 
         @launch
         def missing(config):
+            pass
+
+    with pytest.raises(TypeError, match=r"\*args"):
+
+        @launch
+        def star(*names: str):
             pass

@@ -1,7 +1,91 @@
+import contextlib
+import os
+import re
+import signal
+import subprocess
 import sys
 import textwrap
 
 import pytest
+
+from _live import Probe, counter, need_ros
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "live: starts real processes (plain, ROS nodes, tlaunch itself); "
+        'deselect with -m "not live"',
+    )
+
+
+# --------------------------------------------------------------------------
+# live tests: real processes (and ROS nodes); helpers in _live.py
+# --------------------------------------------------------------------------
+@pytest.fixture
+def uniq(request):
+    """A name no other test (or concurrent run) uses: a ROS name token."""
+    base = re.sub(r"[^A-Za-z0-9]", "_", request.node.name)[-16:].strip("_")
+    return f"t{os.getpid()}_{next(counter)}_{base}".lower()
+
+
+@pytest.fixture
+def make_run(tmp_path):
+    """make_run(label="t", **Run kwargs) -> an engine.Run on a fresh
+    libtmux_easy Processes group (subprocesses); torn down at the end even
+    if the test fails."""
+    processes = pytest.importorskip("libtmux_easy.processes")
+    from ros2_typed_launch import engine
+
+    runs = []
+
+    def make(label="t", **kwargs):
+        d = tmp_path / f"run{len(runs)}"
+        procs = processes.Processes(label, log_dir=str(d), prefix="")
+        kwargs.setdefault("params_dir", str(d / "params"))
+        run = engine.Run(procs, label=label, **kwargs)
+        runs.append(run)
+        return run
+
+    yield make
+    for run in runs:
+        run.teardown()
+
+
+@pytest.fixture
+def probe():
+    need_ros()
+    p = Probe()
+    yield p
+    p.destroy()
+
+
+@pytest.fixture
+def spawn():
+    """spawn(argv, **Popen kwargs) -> a Popen in a session of its own, text
+    output piped; stopped (SIGINT, then SIGKILL) at the end of the test."""
+    started = []
+
+    def _spawn(argv, **kwargs):
+        kwargs.setdefault("stdout", subprocess.PIPE)
+        kwargs.setdefault("stderr", subprocess.STDOUT)
+        kwargs.setdefault("text", True)
+        proc = subprocess.Popen(argv, start_new_session=True, **kwargs)
+        started.append(proc)
+        return proc
+
+    yield _spawn
+    for proc in started:
+        if proc.poll() is None:
+            with contextlib.suppress(OSError):
+                os.killpg(proc.pid, signal.SIGINT)
+            try:
+                proc.wait(10)
+            except subprocess.TimeoutExpired:
+                with contextlib.suppress(OSError):
+                    os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait(5)
+
 
 SAMPLE = '''
 from typing import Any, Literal

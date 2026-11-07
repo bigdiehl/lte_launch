@@ -38,7 +38,7 @@ ament_environment_hooks(hook/tlaunch-completion.bash)
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
-  ament_add_pytest_test(ros2_typed_launch_test test)
+  ament_add_pytest_test(ros2_typed_launch_test test TIMEOUT 300)
 endif()
 
 # ros2_typed_launch_install_stubs(): for packages whose typed launches stock

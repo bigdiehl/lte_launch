@@ -81,6 +81,7 @@ def run_stock(typed, **args):
 
 
 def test_stock_launch_includes_a_typed_one(tmp_path):
+    pytest.importorskip("launch")
     from launch.actions import DeclareLaunchArgument
 
     declared = {
@@ -93,7 +94,8 @@ def test_stock_launch_includes_a_typed_one(tmp_path):
     assert declared["inner.r"].description == "Red (>=0, <=255)"
 
     cmd, generated = run_stock(stocked, name="a", **{"inner.r": "7", "inner.tags": "[x, y]"})
-    assert cmd[:2] == ["tlaunch", __file__]  # not in a package: by path
+    # not in a package: by path (realpath: colcon test runs it via src/'s symlink)
+    assert cmd[0] == "tlaunch" and Path(cmd[1]).resolve() == Path(__file__).resolve()
     assert generated == {"name": "a", "inner": {"r": "7", "tags": ["x", "y"]}}
 
     # defaults < files < arguments: the files first, the arguments last.
@@ -111,6 +113,7 @@ def test_stock_launch_includes_a_typed_one(tmp_path):
 
 
 def test_stock_target_args():
+    pytest.importorskip("ros2_typed_launch.examples")
     from ros2_typed_launch.examples import turtle_demo
     from ros2_typed_launch.stock import target_args
 
