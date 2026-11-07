@@ -1,4 +1,8 @@
-# ros2_typed_launch
+# lte_launch
+
+Package `lte_launch` (was `ros2_typed_launch`; renamed 2026-11-07 to match `lte_launch_test`,
+as the engine is libtmux_easy). Debian package via bloom: `ros-jazzy-lte-launch`. The command
+is still `tlaunch`; the repo directory and GitHub repo still carry the old name.
 
 Typed, schema-driven launch files for ROS 2 (Jazzy). A Pydantic model is the
 public interface of a launch; the launch body is plain Python that starts what it
@@ -88,13 +92,13 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
 - **Launch files are real Python modules, named `*_launch.py`** (one dot — not
   `*.launch.py`, unimportable: a second dot before `.py` reads as package.submodule),
   in a directory CMake installs as a real **subpackage nested under the main package**
-  (here `examples/launch/` → `ros2_typed_launch.examples.turtle_demo_launch`), not a copy
+  (here `examples/launch/` → `lte_launch.examples.turtle_demo_launch`), not a copy
   to `share/launch/`.
   Consequence: **a same-package include is a plain (relative) `import`** —
   `from .other_launch import OtherConfig, other`; a child's config class is reused via
   composition (`params: OtherConfig = OtherConfig()` field, *not* subclassing — see
   `turtle_demo_launch.py`). `examples/launch/__init__.py` re-exports every launch's function and
-  config, so `from ros2_typed_launch.examples import turtle_demo, TurtleDemoConfig`
+  config, so `from lte_launch.examples import turtle_demo, TurtleDemoConfig`
   works without naming the submodule. `load_launch("pkg", "module")` (same
   `importlib.import_module` under the hood) is only for a launch chosen dynamically or
   from another package. `include(child, config)` runs the child's body right there (a
@@ -131,7 +135,7 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   "file.launch.py", **args)`, run as one `ros2 launch` process (`stock_arg` converts values).
   The other way (`stock.py`): a typed launch's `generate_launch_description()` returns a
   stock `LaunchDescription`, one argument per field plus `tlaunch_config`, validated at
-  include time, that runs one `tlaunch` process; `ros2_typed_launch_install_stubs(...)` in
+  include time, that runs one `tlaunch` process; `lte_launch_install_stubs(...)` in
   CMake puts a stub in `share/<pkg>/launch/` so stock can find it. Design-notes Q17.
 - **Parity with stock launch** is tracked feature by feature in `docs/parity.md` (next:
   scopes into a stock include, `sigkill_timeout`).
@@ -151,17 +155,17 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
 
 ## Layout
 
-The **repo root is the `ros2_typed_launch` package** (`package.xml` here), one `ament_cmake`
+The **repo root is the `lte_launch` package** (`package.xml` here), one `ament_cmake`
 package. It is built in a separate colcon workspace, **`~/ros2_ws`**, where
-`src/ros2_typed_launch` is a symlink to this repo; `build/ install/ log/` live there.
+`src/lte_launch` is a symlink to this repo; `build/ install/ log/` live there.
 
 - `package.xml`/`CMakeLists.txt`: `ament_python_install_package(${PROJECT_NAME})` installs
   the library; a second call installs `examples/launch/` as the subpackage
-  `ros2_typed_launch.examples`. `scripts/tlaunch` goes to `bin/`
-  and `lib/ros2_typed_launch/`. `cmake/ros2_typed_launch-extras.cmake` defines
-  `ros2_typed_launch_install_stubs()` (exported, and used here for the examples).
+  `lte_launch.examples`. `scripts/tlaunch` goes to `bin/`
+  and `lib/lte_launch/`. `cmake/lte_launch-extras.cmake` defines
+  `lte_launch_install_stubs()` (exported, and used here for the examples).
   `ament_add_pytest_test` wires `test/` into `colcon test`.
-- `ros2_typed_launch/`: `cli.py` (command), `loader.py` (`resolve()`/`load_launch`:
+- `lte_launch/`: `cli.py` (command), `loader.py` (`resolve()`/`load_launch`:
   find and import a launch, by package+bare-filename search, an explicit
   dotted/on-disk-slash path, or a standalone file path), `schema.py` (**all** Pydantic
   access), `config.py` (YAML, `<package>:<path>` refs, merge), `core.py` (`@launch`,
@@ -182,14 +186,14 @@ package. It is built in a separate colcon workspace, **`~/ros2_ws`**, where
   the machine.
 - `examples/` — runnable examples. **`examples/README.md` lists every one with its
   commands** — keep it updated when an example is added or its flags change.
-  - `launch/` → `ros2_typed_launch.examples`: `turtle_bringup_launch.py` (the synchronous
+  - `launch/` → `lte_launch.examples`: `turtle_bringup_launch.py` (the synchronous
     style), `turtle_demo_launch.py`, `turtle_teleop_launch.py`, `localization_launch.py`,
     `turtle_params_launch.py` (typed `RosParams` + the untyped lanes), `composition_launch.py`
     (composable nodes), `lifecycle_launch.py`, `stock_include_launch.py` — ordinary submodules importing each other
     directly; `__init__.py` re-exports them all.
-  - `config/*.yaml` → `share/ros2_typed_launch/examples/config/`
-    (`--config ros2_typed_launch:examples/config/quiet.yaml`).
-  - `stock_launch/` → `share/ros2_typed_launch/launch/`: `spawn_turtle.launch.py` (a
+  - `config/*.yaml` → `share/lte_launch/examples/config/`
+    (`--config lte_launch:examples/config/quiet.yaml`).
+  - `stock_launch/` → `share/lte_launch/launch/`: `spawn_turtle.launch.py` (a
     traditional untyped file, included by `stock_include_launch.py`) and
     `stock_parent.launch.xml` (a stock file including a typed one).
   - `run.sh` — the tmux/dashboard demo (modes `dash`, `tmux`, `flaky`, `plain`;
@@ -218,23 +222,23 @@ source install/setup.bash         # tlaunch on PATH + tab completion come from t
 
 python3 -m pytest ~/projects/ros2_typed_launch/test -q               # tests (~45 s)
 python3 -m pytest ~/projects/ros2_typed_launch/test -q -m "not live"  # quick: nothing starts (~1 s)
-colcon test --packages-select ros2_typed_launch && colcon test-result
+colcon test --packages-select lte_launch && colcon test-result
 
-tlaunch ros2_typed_launch turtle_demo_launch.py -h              # schema-generated help
-tlaunch ros2_typed_launch turtle_demo_launch.py \
-    --config ros2_typed_launch:examples/config/blue_turtle.yaml \
-    --config ros2_typed_launch:examples/config/quiet.yaml \
+tlaunch lte_launch turtle_demo_launch.py -h              # schema-generated help
+tlaunch lte_launch turtle_demo_launch.py \
+    --config lte_launch:examples/config/blue_turtle.yaml \
+    --config lte_launch:examples/config/quiet.yaml \
     --turtlesim.background_r 99 --show-config                        # layering + provenance, no launch
-tlaunch ros2_typed_launch turtle_params_launch.py \
-    --config ros2_typed_launch:examples/config/params_demo.yaml --show-config
+tlaunch lte_launch turtle_params_launch.py \
+    --config lte_launch:examples/config/params_demo.yaml --show-config
                         # typed RosParams + untyped ros__parameters/ros__remappings,
                         # with which node pattern matched which node
-tlaunch ros2_typed_launch turtle_bringup_launch.py              # start, wait, supervise
-tlaunch ros2_typed_launch turtle_bringup_launch.py --dry-run    # every command line
-tlaunch ros2_typed_launch turtle_bringup_launch.py --crash_after 3 ; echo "exit: $?"  # 1
-tlaunch ros2_typed_launch turtle_bringup_launch.py --tmux --teleop   # a pane per process
-tlaunch ros2_typed_launch composition_launch.py                 # composable nodes
-tlaunch ros2_typed_launch turtle_params_launch.py --log-level debug --log-commands
+tlaunch lte_launch turtle_bringup_launch.py              # start, wait, supervise
+tlaunch lte_launch turtle_bringup_launch.py --dry-run    # every command line
+tlaunch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo "exit: $?"  # 1
+tlaunch lte_launch turtle_bringup_launch.py --tmux --teleop   # a pane per process
+tlaunch lte_launch composition_launch.py                 # composable nodes
+tlaunch lte_launch turtle_params_launch.py --log-level debug --log-commands
 examples/run.sh                   # the dashboard (opens tmux if needed)
 examples/lte_test/run.sh -v       # under lte_launch_test
 tlaunch <file_launch.py> --schema                                    # JSON Schema
@@ -244,7 +248,7 @@ tlaunch <file_launch.py> --schema                                    # JSON Sche
 that's the only thing needed, for this and for tab completion alike.
 `CMakeLists.txt` installs it to both `bin/` — picked up by
 `ament_cmake_core`'s default `path.sh` environment hook, the same mechanism that puts
-`ros2` itself on `PATH` — and `lib/ros2_typed_launch/`, where `ros2 run ros2_typed_launch
+`ros2` itself on `PATH` — and `lib/lte_launch/`, where `ros2 run lte_launch
 tlaunch` looks. Not a shell function any more, so it composes normally (`timeout ...
 tlaunch ...` works). **Tab completion** (package names, then that package's
 `*_launch.py` files, like `ros2 launch`) is wired via `argcomplete`

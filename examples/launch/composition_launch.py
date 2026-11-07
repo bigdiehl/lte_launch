@@ -1,15 +1,15 @@
 # composition_launch.py -- composable nodes, and where they run: one config field.
 # A failed load stops the run at its line.
 #
-#   tlaunch ros2_typed_launch composition_launch.py                    # our container "box"
-#   tlaunch ros2_typed_launch composition_launch.py --container ""     # each in its own
-#   tlaunch ros2_typed_launch composition_launch.py --container /robot/box   # one running
-#   tlaunch ros2_typed_launch composition_launch.py --dry-run          # loads as commands
-#   tlaunch ros2_typed_launch composition_launch.py --plugin composition::Nope
+#   tlaunch lte_launch composition_launch.py                    # our container "box"
+#   tlaunch lte_launch composition_launch.py --container ""     # each in its own
+#   tlaunch lte_launch composition_launch.py --container /robot/box   # one running
+#   tlaunch lte_launch composition_launch.py --dry-run          # loads as commands
+#   tlaunch lte_launch composition_launch.py --plugin composition::Nope
 
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import component, container, launch, log, namespace
+from lte_launch import component, container, launch, log, namespace
 
 
 class CompositionConfig(BaseModel):

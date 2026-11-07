@@ -1,7 +1,7 @@
 # Examples
 
-Runnable examples, installed as `ros2_typed_launch.examples` (configs in
-`share/ros2_typed_launch/examples/config/`). Every command is meant to be copy-pasted.
+Runnable examples, installed as `lte_launch.examples` (configs in
+`share/lte_launch/examples/config/`). Every command is meant to be copy-pasted.
 
 ```bash
 cd ~/ros2_ws                                           # the colcon workspace
@@ -30,11 +30,11 @@ stops a run. Without a display: `export QT_QPA_PLATFORM=offscreen`.
 ### turtle_bringup_launch.py
 
 ```bash
-tlaunch ros2_typed_launch turtle_bringup_launch.py                # subprocesses
-tlaunch ros2_typed_launch turtle_bringup_launch.py --tmux --teleop  # a pane per process
-tlaunch ros2_typed_launch turtle_bringup_launch.py --tmux-dash    # + libtmux_easy dashboard
-tlaunch ros2_typed_launch turtle_bringup_launch.py --dry-run      # the plan only
-tlaunch ros2_typed_launch turtle_bringup_launch.py --crash_after 3 ; echo $?   # a death: 1
+tlaunch lte_launch turtle_bringup_launch.py                # subprocesses
+tlaunch lte_launch turtle_bringup_launch.py --tmux --teleop  # a pane per process
+tlaunch lte_launch turtle_bringup_launch.py --tmux-dash    # + libtmux_easy dashboard
+tlaunch lte_launch turtle_bringup_launch.py --dry-run      # the plan only
+tlaunch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo $?   # a death: 1
 ```
 
 A death prints `[ERROR] [tlaunch]: <who> died unexpectedly` with its last output, stops
@@ -43,38 +43,38 @@ everything at once and exits 1. A second Ctrl-C while stopping kills everything.
 ### turtle_demo_launch.py
 
 ```bash
-tlaunch ros2_typed_launch turtle_demo_launch.py \
+tlaunch lte_launch turtle_demo_launch.py \
     --turtlesim.background_r 99 --no-teleop.enabled --localization.params.x 2.5
-tlaunch ros2_typed_launch turtle_demo_launch.py \
-    --config ros2_typed_launch:examples/config/blue_turtle.yaml \
-    --config ros2_typed_launch:examples/config/quiet.yaml \
+tlaunch lte_launch turtle_demo_launch.py \
+    --config lte_launch:examples/config/blue_turtle.yaml \
+    --config lte_launch:examples/config/quiet.yaml \
     --turtlesim.background_r 99 --show-config      # later files win, flags win over all
-tlaunch ros2_typed_launch localization_launch.py --x 1.0 --y 2.0 --yaw 0.5 --show-config
+tlaunch lte_launch localization_launch.py --x 1.0 --y 2.0 --yaw 0.5 --show-config
 ```
 
 ### turtle_params_launch.py
 
 ```bash
-tlaunch ros2_typed_launch turtle_params_launch.py --turtlesim.background_r 200
-tlaunch ros2_typed_launch turtle_params_launch.py \
-    --config ros2_typed_launch:examples/config/params_demo.yaml --show-config
-tlaunch ros2_typed_launch turtle_params_launch.py \
+tlaunch lte_launch turtle_params_launch.py --turtlesim.background_r 200
+tlaunch lte_launch turtle_params_launch.py \
+    --config lte_launch:examples/config/params_demo.yaml --show-config
+tlaunch lte_launch turtle_params_launch.py \
     --ros-param '/**:use_sim_time=true' \
     --ros-remap '/demo/turtlesim:turtle1/cmd_vel=/joy_vel' --show-config
-tlaunch ros2_typed_launch turtle_params_launch.py \
-    --config ros2_typed_launch:examples/config/params_demo.yaml --strict   # refuses untyped
+tlaunch lte_launch turtle_params_launch.py \
+    --config lte_launch:examples/config/params_demo.yaml --strict   # refuses untyped
 ros2 param get /demo/turtlesim background_r       # while it runs
 ```
 
 ### composition_launch.py
 
 ```bash
-tlaunch ros2_typed_launch composition_launch.py --topic /chat          # our container "box"
-tlaunch ros2_typed_launch composition_launch.py --container ""         # each standalone
+tlaunch lte_launch composition_launch.py --topic /chat          # our container "box"
+tlaunch lte_launch composition_launch.py --container ""         # each standalone
 ros2 run rclcpp_components component_container --ros-args -r __node:=box -r __ns:=/robot &
-tlaunch ros2_typed_launch composition_launch.py --container /robot/box # into that one
-tlaunch ros2_typed_launch composition_launch.py --kind multithreaded --dry-run
-tlaunch ros2_typed_launch composition_launch.py --plugin composition::Nope ; echo $?  # 1
+tlaunch lte_launch composition_launch.py --container /robot/box # into that one
+tlaunch lte_launch composition_launch.py --kind multithreaded --dry-run
+tlaunch lte_launch composition_launch.py --plugin composition::Nope ; echo $?  # 1
 ros2 component list                               # while it runs
 ```
 
@@ -84,11 +84,11 @@ components; it fails if that container goes away.
 ### lifecycle_launch.py
 
 ```bash
-tlaunch ros2_typed_launch lifecycle_launch.py                    # configure, activate
-tlaunch ros2_typed_launch lifecycle_launch.py --autostart        # the same, one keyword
-tlaunch ros2_typed_launch lifecycle_launch.py --blink 3          # deactivate, activate again
-tlaunch ros2_typed_launch lifecycle_launch.py --skip_configure ; echo $?   # refused: 1
-tlaunch ros2_typed_launch lifecycle_launch.py --dry-run          # `ros2 lifecycle set` lines
+tlaunch lte_launch lifecycle_launch.py                    # configure, activate
+tlaunch lte_launch lifecycle_launch.py --autostart        # the same, one keyword
+tlaunch lte_launch lifecycle_launch.py --blink 3          # deactivate, activate again
+tlaunch lte_launch lifecycle_launch.py --skip_configure ; echo $?   # refused: 1
+tlaunch lte_launch lifecycle_launch.py --dry-run          # `ros2 lifecycle set` lines
 ros2 lifecycle get /lc/lc_talker                                 # while it runs
 ```
 
@@ -97,14 +97,14 @@ At Ctrl-C the talker is sent `shutdown` (its `on_shutdown` runs) before the SIGI
 ### Stock interop
 
 ```bash
-tlaunch ros2_typed_launch stock_include_launch.py --namespace t1 --background_r 120
-ros2 launch ros2_typed_launch stock_parent.launch.xml
-ros2 launch ros2_typed_launch turtle_demo_launch.py -s          # one argument per field
-ros2 launch ros2_typed_launch turtle_demo_launch.py turtlesim.namespace:=a teleop.enabled:=false
+tlaunch lte_launch stock_include_launch.py --namespace t1 --background_r 120
+ros2 launch lte_launch stock_parent.launch.xml
+ros2 launch lte_launch turtle_demo_launch.py -s          # one argument per field
+ros2 launch lte_launch turtle_demo_launch.py turtlesim.namespace:=a teleop.enabled:=false
 ```
 
 A typed launch includes a stock file as one `ros2 launch` process. A stock file includes a
-typed one through its stub in `share/` (`ros2_typed_launch_install_stubs` in CMake); the
+typed one through its stub in `share/` (`lte_launch_install_stubs` in CMake); the
 arguments are validated at include time, then it runs as one `tlaunch` process.
 
 ### lte_test/

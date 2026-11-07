@@ -14,10 +14,10 @@ import pytest
 from pydantic import BaseModel
 
 from _live import later, need_ros, until
-from ros2_typed_launch import RosParams, component, container, container_at, engine
-from ros2_typed_launch import launch, log, namespace
-from ros2_typed_launch import ros_config as rc
-from ros2_typed_launch.composable import EXECUTABLES
+from lte_launch import RosParams, component, container, container_at, engine
+from lte_launch import launch, log, namespace
+from lte_launch import ros_config as rc
+from lte_launch.composable import EXECUTABLES
 
 pytestmark = pytest.mark.live
 

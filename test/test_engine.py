@@ -12,13 +12,13 @@ import pytest
 import yaml
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import (
+from lte_launch import (
     RosParams, component, container, container_at, environment, launch, namespace,
 )  # fmt: skip
-from ros2_typed_launch import include, node, process, shutdown, sleep, window
-from ros2_typed_launch import command as cmd
-from ros2_typed_launch import engine
-from ros2_typed_launch import ros_config as rc
+from lte_launch import include, node, process, shutdown, sleep, window
+from lte_launch import command as cmd
+from lte_launch import engine
+from lte_launch import ros_config as rc
 from _live import SLOW
 
 

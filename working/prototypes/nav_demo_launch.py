@@ -3,7 +3,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import launch
+from lte_launch import launch
 
 
 class RobotConfig(BaseModel):

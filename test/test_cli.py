@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ros2_typed_launch import cli
+from lte_launch import cli
 
 
 def run(argv, capsys):
@@ -168,7 +168,7 @@ def test_layering_defaults_files_then_cli(
     values, _ = show(sample_launch, ["--map", "m", "--robot.use_sim_time"], capsys)
     assert values["robot.use_sim_time"] is True
 
-    from ros2_typed_launch import config
+    from lte_launch import config
 
     share = tmp_path / "share"
     (share / "config").mkdir(parents=True)
@@ -255,7 +255,7 @@ def test_bad_values_are_reported_before_anything_starts(
     path = tmp_path / "c_launch.py"
     path.write_text(
         "from pydantic import BaseModel\n"
-        "from ros2_typed_launch import launch\n"
+        "from lte_launch import launch\n"
         "class C(BaseModel):\n    config: str = 'x'\n"
         "@launch(config=C)\ndef c(config):\n    return []\n"
         "generate_launch_description = c.generate_launch_description\n"

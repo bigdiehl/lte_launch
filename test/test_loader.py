@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from ros2_typed_launch import loader
+from lte_launch import loader
 
 
 def test_resolve_by_path(sample_launch, fake_package):
@@ -30,7 +30,7 @@ def test_resolve_by_path(sample_launch, fake_package):
     path = str(pathlib.Path(tpkg.__file__).parent / "main_launch.py")
     with pytest.raises(
         loader.LaunchLookupError,
-        match="no parent package.*tlaunch ros2_typed_launch",
+        match="no parent package.*tlaunch lte_launch",
     ):
         loader.resolve(path)
 

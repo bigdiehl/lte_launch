@@ -14,13 +14,13 @@ import textwrap
 import pytest
 import yaml
 
-from _live import Reader, need_ros
+from _live import Reader, need_ros, until
 
 pytestmark = pytest.mark.live
 
 LAUNCH = """
 from pydantic import BaseModel, Field
-from ros2_typed_launch import launch, node, process
+from lte_launch import launch, node, process
 
 
 class E2EConfig(BaseModel):
@@ -151,16 +151,17 @@ def test_tmux(e2e):
 
 
 def test_the_bringup_example(spawn, probe, uniq):
-    need_ros("turtlesim", "ros2_typed_launch")
+    need_ros("turtlesim", "lte_launch")
     pytest.importorskip("libtmux_easy.processes")  # tlaunch needs it
     if not shutil.which("tlaunch"):
         pytest.skip("tlaunch not on PATH")
-    target = ["ros2_typed_launch", "turtle_bringup_launch.py", "--namespace", uniq]
+    target = ["lte_launch", "turtle_bringup_launch.py", "--namespace", uniq]
     out = Reader(spawn(["tlaunch", *target, "--turtlesim.background_r", "33"],
                        stdin=subprocess.DEVNULL))  # fmt: skip
     out.wait_for(r"\[tlaunch\]: up: 2 process", 30)
     assert probe.param(f"/{uniq}/turtlesim", "background_r") == 33
-    assert probe.publishers(f"/{uniq}/turtle1/cmd_vel") >= 1  # the driver
+    # the driver: graph discovery can trail its "publishing" line
+    until(lambda: probe.publishers(f"/{uniq}/turtle1/cmd_vel") >= 1, 10, "the driver")
     out.proc.send_signal(signal.SIGINT)
     assert out.finish(20) == 0, out.text
 

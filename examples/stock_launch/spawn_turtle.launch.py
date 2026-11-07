@@ -1,7 +1,7 @@
 # spawn_turtle.launch.py -- a traditional (untyped) ros2 launch file: no
 # schema, no validation, args are name:=value strings, declared with
 # DeclareLaunchArgument and read back with LaunchConfiguration. Installed to
-# share/ros2_typed_launch/launch/, like any stock launch file -- not part
+# share/lte_launch/launch/, like any stock launch file -- not part
 # of the Python package, so tlaunch's own search never finds it (by design:
 # this file is for `ros2 launch` or IncludeLaunchDescription, not `tlaunch`).
 #

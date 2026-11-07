@@ -12,8 +12,8 @@ import pytest
 from pydantic import BaseModel
 
 from _live import Reader, need_ros
-from ros2_typed_launch import engine, environment, include, launch, namespace, node
-from ros2_typed_launch import window
+from lte_launch import engine, environment, include, launch, namespace, node
+from lte_launch import window
 
 
 class Inner(BaseModel):
@@ -58,18 +58,18 @@ def test_typed_include_runs_in_the_parents_scopes():
 
 @pytest.mark.live
 def test_stock_include(make_run, probe, uniq):
-    need_ros("turtlesim", "ros2_typed_launch")
+    need_ros("turtlesim", "lte_launch")
     run = make_run()
     with engine.active(run):
         proc = include(
-            "ros2_typed_launch", "spawn_turtle.launch.py", name="spawn",
+            "lte_launch", "spawn_turtle.launch.py", name="spawn",
             namespace=uniq, use_sim_time=True, background_r=12,
         )  # fmt: skip
         assert proc.key == "t:spawn"
         assert proc.argv[:4] == [
             "ros2",
             "launch",
-            "ros2_typed_launch",
+            "lte_launch",
             "spawn_turtle.launch.py",
         ]
         assert proc.argv[4:] == [
@@ -87,11 +87,11 @@ def test_stock_include(make_run, probe, uniq):
 
 @pytest.mark.live
 def test_stock_launch_includes_typed(spawn, probe, uniq):
-    need_ros("turtlesim", "ros2_typed_launch")
+    need_ros("turtlesim", "lte_launch")
     pytest.importorskip("libtmux_easy.processes")  # tlaunch needs it
     if not shutil.which("tlaunch"):
         pytest.skip("tlaunch not on PATH (source the workspace's install/setup.bash)")
-    out = Reader(spawn(["ros2", "launch", "ros2_typed_launch", "stock_parent.launch.xml",
+    out = Reader(spawn(["ros2", "launch", "lte_launch", "stock_parent.launch.xml",
                         f"namespace:={uniq}"]))  # fmt: skip
     probe.wait_node(f"/{uniq}/turtlesim", 40)
     out.wait_for(r"\[tlaunch\]: up: 1 process", 20)

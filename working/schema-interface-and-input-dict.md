@@ -123,7 +123,7 @@ marker survives in `FieldInfo.metadata`, `"22 cm"` validates to `0.22`, and `ge=
 *after* conversion. Estimated 250–400 lines including tests.
 
 ```python
-from ros2_typed_launch.units import Length, Duration, Angle
+from lte_launch.units import Length, Duration, Angle
 
 class NavConfig(BaseModel):
     radius: Length = Field(0.22, ge=0)   # Annotated[float, Unit("m")]; "22 cm" -> 0.22

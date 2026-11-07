@@ -9,8 +9,8 @@ import time
 import pytest
 
 from _live import PY, need_ros
-from ros2_typed_launch import engine, namespace, node, process, sleep
-from ros2_typed_launch import wait_for_node, wait_for_topic
+from lte_launch import engine, namespace, node, process, sleep
+from lte_launch import wait_for_node, wait_for_topic
 
 pytestmark = pytest.mark.live
 

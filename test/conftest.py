@@ -35,7 +35,7 @@ def make_run(tmp_path):
     libtmux_easy Processes group (subprocesses); torn down at the end even
     if the test fails."""
     processes = pytest.importorskip("libtmux_easy.processes")
-    from ros2_typed_launch import engine
+    from lte_launch import engine
 
     runs = []
 
@@ -90,7 +90,7 @@ def spawn():
 SAMPLE = '''
 from typing import Any, Literal
 from pydantic import BaseModel, Field
-from ros2_typed_launch import launch
+from lte_launch import launch
 
 
 class Robot(BaseModel):
@@ -157,7 +157,7 @@ def write(tmp_path):
 # relative import -- the pattern `turtle_demo_launch.py` uses for real.
 CHILD_MODULE = """
 from pydantic import BaseModel
-from ros2_typed_launch import launch, process
+from lte_launch import launch, process
 
 
 class ChildConfig(BaseModel):
@@ -173,7 +173,7 @@ generate_launch_description = child.generate_launch_description
 
 MAIN_MODULE = """
 from pydantic import BaseModel
-from ros2_typed_launch import include, launch
+from lte_launch import include, launch
 from .child_launch import ChildConfig, child
 
 

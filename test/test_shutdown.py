@@ -11,8 +11,8 @@ import time
 import pytest
 from pydantic import BaseModel
 
-from ros2_typed_launch import launch, on_shutdown, process, shutdown, sleep
-from ros2_typed_launch import engine
+from lte_launch import launch, on_shutdown, process, shutdown, sleep
+from lte_launch import engine
 from _live import DEAF, SLOW
 
 
@@ -198,7 +198,7 @@ def test_per_process_stop_timeout(tmp_path, capsys):
 
 LAUNCH_FILE = f"""
 from pydantic import BaseModel
-from ros2_typed_launch import launch, on_shutdown, process, shutdown
+from lte_launch import launch, on_shutdown, process, shutdown
 
 class C(BaseModel):
     x: int = 1
@@ -214,7 +214,7 @@ def deaf(config: C):
 @pytest.mark.live
 def test_stop_timeout_flag(tmp_path, capsys):
     pytest.importorskip("libtmux_easy.processes")
-    from ros2_typed_launch import cli
+    from lte_launch import cli
 
     path = tmp_path / "deaf_launch.py"
     path.write_text(LAUNCH_FILE)

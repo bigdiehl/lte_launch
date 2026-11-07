@@ -874,7 +874,7 @@ def active(run: Run):
 def current() -> Run:
     if _active is None:
         raise RuntimeError(
-            "ros2_typed_launch's node(), include(), ... only work inside an "
+            "lte_launch's node(), include(), ... only work inside an "
             "@launch body run by tlaunch (or a test's procs.build)"
         )
     return _active

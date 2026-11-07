@@ -1,6 +1,6 @@
 # Design
 
-How `ros2_typed_launch` works (branch `engine-lte`). Goals and direction: [goals.md](goals.md).
+How `lte_launch` works (branch `engine-lte`). Goals and direction: [goals.md](goals.md).
 Stock launch feature by feature: [parity.md](parity.md). Background and history of each question:
 [`working/design-notes.md`](../working/design-notes.md) (Q numbers).
 
@@ -67,7 +67,7 @@ error.
 `tlaunch` runs it from `teardown()`; a test that used `start(procs)` gets the same sequence from
 its own `procs.close()` (`bind_close`), so it leaves nothing loaded or running.
 
-## Modules (`ros2_typed_launch/`)
+## Modules (`lte_launch/`)
 
 | Module | Owns |
 |---|---|
@@ -184,7 +184,7 @@ A node's parameters and remaps, lowest first:
 |---|---|
 | typed includes typed | Python import + `include(child, config or **fields)`: a function call |
 | typed includes stock | `include("pkg", "file.launch.py", **args)` or `include(path, **args)`: one `ros2 launch` process |
-| stock includes typed | Stub in `share/` (`ros2_typed_launch_install_stubs`); one launch argument per field, validated at include time; runs one `tlaunch` process (`stock.py`) |
+| stock includes typed | Stub in `share/` (`lte_launch_install_stubs`); one launch argument per field, validated at include time; runs one `tlaunch` process (`stock.py`) |
 
 A stock include's deaths: `ros2 launch` exits 0 whatever its processes did, so the engine reads
 its `process has died [pid P, exit code C` lines (a per-line hook through

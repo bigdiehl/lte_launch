@@ -1,14 +1,14 @@
 <!-- A stock launch file including a typed one (its stub in share/, see CMakeLists.txt).
      Each schema field is a launch argument; tlaunch_config takes config files.
-       ros2 launch ros2_typed_launch stock_parent.launch.xml -->
+       ros2 launch lte_launch stock_parent.launch.xml -->
 <launch>
   <arg name="namespace" default="stock"/>
   <group>
-    <include file="$(find-pkg-share ros2_typed_launch)/launch/turtle_demo_launch.py">
+    <include file="$(find-pkg-share lte_launch)/launch/turtle_demo_launch.py">
       <arg name="turtlesim.namespace" value="$(var namespace)"/>
       <arg name="turtlesim.background_r" value="200"/>
       <arg name="localization.enabled" value="false"/>
-      <arg name="tlaunch_config" value="ros2_typed_launch:examples/config/quiet.yaml"/>
+      <arg name="tlaunch_config" value="lte_launch:examples/config/quiet.yaml"/>
     </include>
   </group>
 </launch>

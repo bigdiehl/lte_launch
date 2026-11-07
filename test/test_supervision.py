@@ -13,8 +13,8 @@ import pytest
 from pydantic import BaseModel
 
 from _live import DEAF, PY, QUIET, later, until
-from ros2_typed_launch import environment, launch, process, shutdown, sleep, window
-from ros2_typed_launch import engine
+from lte_launch import environment, launch, process, shutdown, sleep, window
+from lte_launch import engine
 
 pytestmark = pytest.mark.live
 

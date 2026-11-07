@@ -2,9 +2,9 @@
 
 import pytest
 
-from ros2_typed_launch import config as cfg
-from ros2_typed_launch import ros_config as rc
-from ros2_typed_launch import subst
+from lte_launch import config as cfg
+from lte_launch import ros_config as rc
+from lte_launch import subst
 
 
 def test_merge_nest_and_lookup():
@@ -166,10 +166,10 @@ def test_expand_uses_the_stock_substitutions(monkeypatch):
     assert subst.expand("$(env TLAUNCH_NOT_SET fallback)") == "fallback"
     # find-pkg-* live in launch_ros, which subst imports for us -- the gotcha
     # that otherwise gives "Unknown substitution: find-pkg-share".
-    assert subst.expand("$(find-pkg-share ros2_typed_launch)").endswith(
-        "/share/ros2_typed_launch"
+    assert subst.expand("$(find-pkg-share lte_launch)").endswith(
+        "/share/lte_launch"
     )
-    assert subst.expand("$(find-pkg-prefix ros2_typed_launch)")
+    assert subst.expand("$(find-pkg-prefix lte_launch)")
     # ...and recursively, through lists and nested mappings.
     out = subst.expand({"paths": ["$(env HOME)/a", "plain"], "n": {"p": "$(env HOME)"}})
     assert out["paths"][0].endswith("/a") and out["paths"][1] == "plain"

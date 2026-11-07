@@ -8,7 +8,7 @@ import pytest
 import yaml
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import engine, include, launch, process, stock_arg
+from lte_launch import engine, include, launch, process, stock_arg
 
 
 class ChildConfig(BaseModel):
@@ -113,11 +113,11 @@ def test_stock_launch_includes_a_typed_one(tmp_path):
 
 
 def test_stock_target_args():
-    pytest.importorskip("ros2_typed_launch.examples")
-    from ros2_typed_launch.examples import turtle_demo
-    from ros2_typed_launch.stock import target_args
+    pytest.importorskip("lte_launch.examples")
+    from lte_launch.examples import turtle_demo
+    from lte_launch.stock import target_args
 
-    assert target_args(turtle_demo) == ["ros2_typed_launch", "examples.turtle_demo_launch"]
+    assert target_args(turtle_demo) == ["lte_launch", "examples.turtle_demo_launch"]
 
 
 class Color(enum.Enum):

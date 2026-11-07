@@ -1,4 +1,6 @@
-# ros2_typed_launch docs
+# lte_launch docs
+
+(Formerly `ros2_typed_launch`. Debian package: `ros-jazzy-lte-launch`.)
 
 Typed, schema-driven launch files for ROS 2 Jazzy. A Pydantic model is a launch's interface.
 The launch body is plain Python, run with `tlaunch`.
@@ -24,19 +26,19 @@ source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install       # once, and after adding a launch/config file
 source install/setup.bash            # tlaunch on PATH, with tab completion
 
-tlaunch ros2_typed_launch turtle_demo_launch.py -h       # options from the schema
-tlaunch ros2_typed_launch turtle_demo_launch.py \
-    --config ros2_typed_launch:examples/config/blue_turtle.yaml \
+tlaunch lte_launch turtle_demo_launch.py -h       # options from the schema
+tlaunch lte_launch turtle_demo_launch.py \
+    --config lte_launch:examples/config/blue_turtle.yaml \
     --turtlesim.background_r 99 --show-config           # layering + provenance, no launch
-tlaunch ros2_typed_launch turtle_bringup_launch.py --dry-run   # the plan, nothing started
-tlaunch ros2_typed_launch turtle_bringup_launch.py --tmux      # a pane per process
+tlaunch lte_launch turtle_bringup_launch.py --dry-run   # the plan, nothing started
+tlaunch lte_launch turtle_bringup_launch.py --tmux      # a pane per process
 ```
 
 ## Minimal launch
 
 ```python
 from pydantic import BaseModel, Field
-from ros2_typed_launch import launch, namespace, node
+from lte_launch import launch, namespace, node
 
 class Config(BaseModel):
     namespace: str = "demo"

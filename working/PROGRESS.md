@@ -34,9 +34,9 @@ Design: `../docs/design.md`; goals: `../docs/goals.md`. Decisions and open quest
 
 - The repo root is the package: `~/projects/ros2_typed_launch` (was `~/projects/ros2_launch`,
   a colcon workspace with two packages under `src/`).
-- Workspace: `~/ros2_ws`, `src/ros2_typed_launch` → the repo.
-- The demo package is folded in as `examples/`, installed as `ros2_typed_launch.examples`
-  (`tlaunch ros2_typed_launch turtle_demo_launch.py`); `test_examples.py` builds each one.
+- Workspace: `~/ros2_ws`, `src/lte_launch` → the repo.
+- The demo package is folded in as `examples/`, installed as `lte_launch.examples`
+  (`tlaunch lte_launch turtle_demo_launch.py`); `test_examples.py` builds each one.
 - Merged branches deleted; only `main`.
 
 ## Synchronous launch status

@@ -6,10 +6,10 @@ import pytest
 from _live import need_ros
 from pydantic import BaseModel
 
-from ros2_typed_launch import (
+from lte_launch import (
     LaunchError, LifecycleNode, launch, lifecycle_at, lifecycle_node, namespace, shutdown,
 )  # fmt: skip
-from ros2_typed_launch import engine
+from lte_launch import engine
 
 TALKER = ("lifecycle", "lifecycle_talker")
 

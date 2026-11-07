@@ -13,12 +13,12 @@ from _live import need_ros
 import yaml
 from pydantic import BaseModel
 
-from ros2_typed_launch import (
+from lte_launch import (
     container, container_at, launch, namespace, node, process, ros_params,
     ros_remaps, shutdown,
 )  # fmt: skip
-from ros2_typed_launch import engine
-from ros2_typed_launch import ros_config as rc
+from lte_launch import engine
+from lte_launch import ros_config as rc
 
 SIM = ("turtlesim", "turtlesim_node")
 TALKER = ("composition", "composition::Talker")

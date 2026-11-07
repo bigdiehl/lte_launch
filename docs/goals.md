@@ -1,6 +1,6 @@
 # Goals and direction
 
-What `ros2_typed_launch` is for, the principles that follow, and where the design should go
+What `lte_launch` is for, the principles that follow, and where the design should go
 next. Sections marked **Proposed** are not built yet. The rest describes what exists.
 How it works today: [design.md](design.md). How it compares with other tools:
 [comparison.md](comparison.md).

@@ -6,7 +6,7 @@ a session script (libtmux_easy docs/testing-scripts.md), plus start(procs).
 
 from lte_launch_test import Processes, RosProbe
 
-from ros2_typed_launch.examples.turtle_bringup_launch import turtle_bringup
+from lte_launch.examples.turtle_bringup_launch import turtle_bringup
 
 # How each may end when stopped: turtlesim and tlaunch exit 0 on SIGINT,
 # `ros2 topic pub` exits 2.
@@ -22,7 +22,7 @@ class TestAsProcess:
         cls.probe = RosProbe(log_dir=cls.procs.log_dir)
         cls.procs.start(
             "sys:tlaunch",
-            "tlaunch ros2_typed_launch turtle_bringup_launch.py --namespace m3"
+            "tlaunch lte_launch turtle_bringup_launch.py --namespace m3"
             " --turtlesim.background_r 33",
             ready=r"\[tlaunch\]: up",
         )

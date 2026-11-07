@@ -7,8 +7,8 @@ from __future__ import annotations
 import pytest
 
 from _live import need_ros, until
-from ros2_typed_launch import RosParams, engine, namespace, node
-from ros2_typed_launch import ros_config as rc
+from lte_launch import RosParams, engine, namespace, node
+from lte_launch import ros_config as rc
 
 pytestmark = pytest.mark.live
 

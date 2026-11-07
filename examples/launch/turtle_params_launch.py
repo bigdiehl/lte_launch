@@ -6,14 +6,14 @@
 #    keyed by node pattern (/**, /**/turtlesim, /demo/*), merged in by node().
 #
 # Try it:
-#   tlaunch ros2_typed_launch turtle_params_launch.py --show-config
-#   tlaunch ros2_typed_launch turtle_params_launch.py \
+#   tlaunch lte_launch turtle_params_launch.py --show-config
+#   tlaunch lte_launch turtle_params_launch.py \
 #       --ros-param '/**:use_sim_time=true' --show-config
-#   tlaunch ros2_typed_launch turtle_params_launch.py --strict   # refuses untyped
+#   tlaunch lte_launch turtle_params_launch.py --strict   # refuses untyped
 
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import RosParams, launch, node
+from lte_launch import RosParams, launch, node
 
 
 class TurtlesimParams(RosParams):

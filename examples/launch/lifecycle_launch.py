@@ -1,15 +1,15 @@
 # lifecycle_launch.py -- a lifecycle node, transitioned line by line.
 # A failed transition stops the run at its line; teardown sends `shutdown`.
 #
-#   tlaunch ros2_typed_launch lifecycle_launch.py                     # configure, activate
-#   tlaunch ros2_typed_launch lifecycle_launch.py --autostart         # same, one keyword
-#   tlaunch ros2_typed_launch lifecycle_launch.py --blink 3           # deactivate, reactivate
-#   tlaunch ros2_typed_launch lifecycle_launch.py --skip_configure    # refused: exit 1
-#   tlaunch ros2_typed_launch lifecycle_launch.py --dry-run           # `ros2 lifecycle set` lines
+#   tlaunch lte_launch lifecycle_launch.py                     # configure, activate
+#   tlaunch lte_launch lifecycle_launch.py --autostart         # same, one keyword
+#   tlaunch lte_launch lifecycle_launch.py --blink 3           # deactivate, reactivate
+#   tlaunch lte_launch lifecycle_launch.py --skip_configure    # refused: exit 1
+#   tlaunch lte_launch lifecycle_launch.py --dry-run           # `ros2 lifecycle set` lines
 
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import launch, lifecycle_node, log, namespace, node, sleep
+from lte_launch import launch, lifecycle_node, log, namespace, node, sleep
 
 
 class LifecycleConfig(BaseModel):

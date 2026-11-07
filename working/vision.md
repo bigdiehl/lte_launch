@@ -194,7 +194,7 @@ is avoiding a dependency we already control. Rejected.
 
 ## Demo results (2026-11-06, branch `engine-lte`)
 
-Path step 3, built: `ros2_typed_launch/lte/` (about 1,000 lines), example
+Path step 3, built: `lte_launch/lte/` (about 1,000 lines), example
 `examples/launch/turtle_lte_launch.py`, tests `test/test_lte.py` and
 `examples/lte_test/` (lte_launch_test).
 

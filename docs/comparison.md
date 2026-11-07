@@ -1,6 +1,6 @@
 # Comparison
 
-How `ros2_typed_launch` compares with stock ROS 2 launch and with
+How `lte_launch` compares with stock ROS 2 launch and with
 [simple_launch](https://github.com/oKermorgant/simple_launch). The simple_launch details come
 from its README (`devel` branch, read 2026-11-05), not from its source code. Goals:
 [goals.md](goals.md).

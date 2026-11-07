@@ -10,18 +10,18 @@
 #     (--localization.params.x, ...) alongside the extra `enabled` switch.
 #
 # turtle_teleop and localization are plain relative imports here because they
-# are sibling modules of this file, both inside the ros2_typed_launch.examples
+# are sibling modules of this file, both inside the lte_launch.examples
 # subpackage (installed from the top-level launch/ directory -- see CMakeLists.txt).
-# This file is itself imported as ros2_typed_launch.examples.turtle_demo_launch,
-# which is how `tlaunch ros2_typed_launch examples.turtle_demo_launch` loads it.
+# This file is itself imported as lte_launch.examples.turtle_demo_launch,
+# which is how `tlaunch lte_launch examples.turtle_demo_launch` loads it.
 # An include is a function call: the child's nodes start right there, in order.
 # For a launch in another package, or picked dynamically by name, use
-# `ros2_typed_launch.load_launch("pkg", "module")` instead -- it is the same
+# `lte_launch.load_launch("pkg", "module")` instead -- it is the same
 # mechanism (a real import), just addressed by string.
 
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import include, launch, node
+from lte_launch import include, launch, node
 
 from .localization_launch import localization, LocalizationConfig
 from .turtle_teleop_launch import turtle_teleop

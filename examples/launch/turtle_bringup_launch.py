@@ -4,16 +4,16 @@
 # Waits block. Ctrl-C or a death stops everything, all at once. No action
 # lists, no generate_launch_description line (the decorator exports it).
 #
-#   tlaunch ros2_typed_launch turtle_bringup_launch.py                # subprocesses
-#   tlaunch ros2_typed_launch turtle_bringup_launch.py --tmux         # libtmux_easy panes
-#   tlaunch ros2_typed_launch turtle_bringup_launch.py --tmux-dash --teleop
-#   tlaunch ros2_typed_launch turtle_bringup_launch.py --dry-run      # the plan only
-#   tlaunch ros2_typed_launch turtle_bringup_launch.py --crash_after 3 ; echo $?
+#   tlaunch lte_launch turtle_bringup_launch.py                # subprocesses
+#   tlaunch lte_launch turtle_bringup_launch.py --tmux         # libtmux_easy panes
+#   tlaunch lte_launch turtle_bringup_launch.py --tmux-dash --teleop
+#   tlaunch lte_launch turtle_bringup_launch.py --dry-run      # the plan only
+#   tlaunch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo $?
 
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import RosParams
-from ros2_typed_launch import launch, log, namespace, node, process, window
+from lte_launch import RosParams
+from lte_launch import launch, log, namespace, node, process, window
 
 
 class TurtleColor(RosParams):

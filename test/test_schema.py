@@ -4,7 +4,7 @@ import pydantic
 import pytest
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import schema
+from lte_launch import schema
 
 
 def test_check_pydantic_version(monkeypatch):

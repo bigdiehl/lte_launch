@@ -2,6 +2,6 @@
     "python.defaultInterpreterPath": "/usr/bin/python3",
     "python.analysis.extraPaths": [
         "/opt/ros/jazzy/lib/python3.12/site-packages",
-        "${userHome}/ros2_ws/install/ros2_typed_launch/lib/python3.12/site-packages"
+        "${userHome}/ros2_ws/install/lte_launch/lib/python3.12/site-packages"
     ]
 }

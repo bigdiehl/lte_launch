@@ -1,6 +1,6 @@
 """What a launch body calls: ``node()``, ``process()``, ``include()``, scopes and waits.
 
-    from ros2_typed_launch import launch, node, namespace
+    from lte_launch import launch, node, namespace
 
     @launch(config=Config)
     def bringup(config):

@@ -6,7 +6,7 @@
 
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import include, launch
+from lte_launch import include, launch
 
 
 class StockIncludeConfig(BaseModel):
@@ -20,7 +20,7 @@ class StockIncludeConfig(BaseModel):
 @launch
 def stock_include(config: StockIncludeConfig):
     include(
-        "ros2_typed_launch",
+        "lte_launch",
         "spawn_turtle.launch.py",
         namespace=config.namespace,
         use_sim_time=config.use_sim_time,

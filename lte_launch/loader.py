@@ -5,7 +5,7 @@ A launch is addressed two ways:
 - an existing file path (a standalone launch, not part of any installed
   package -- loaded with ``importlib.util``, the way ``python path/to/file.py``
   would see it: no parent package, so relative imports don't work in it);
-- ``(package, name)``, e.g. ``("ros2_typed_launch", "turtle_demo_launch.py")``
+- ``(package, name)``, e.g. ``("lte_launch", "turtle_demo_launch.py")``
   -- ``name`` is a **full filename, ``.py`` required**, found by searching the
   installed package for a ``*_launch.py`` file with that name, the way
   ``ros2 launch <package> <file>`` searches ``share/<package>/`` -- our launch
@@ -83,7 +83,7 @@ def _load_from_path(path: str) -> TypedTarget:
                 f"failed to load '{path}': {exc} (a file loaded by path has no "
                 "parent package, so it can't use relative imports; if it's "
                 "installed in a package, address it by name instead, e.g. "
-                "'tlaunch ros2_typed_launch turtle_demo_launch.py')"
+                "'tlaunch lte_launch turtle_demo_launch.py')"
             ) from exc
         raise LaunchLookupError(
             f"failed to load '{path}': {type(exc).__name__}: {exc}"
@@ -210,12 +210,12 @@ def load_launch(*target: str) -> TypedTarget:
     """Load a typed launch, for use with ``include``.
 
         load_launch("/path/to/standalone_launch.py")
-        load_launch("ros2_typed_launch", "turtle_teleop_launch.py")
-        load_launch("ros2_typed_launch", "examples.turtle_teleop_launch")  # to disambiguate
+        load_launch("lte_launch", "turtle_teleop_launch.py")
+        load_launch("lte_launch", "examples.turtle_teleop_launch")  # to disambiguate
 
     The ``(package, file)`` form is a real import: when you already know the package,
     prefer importing directly instead --
-    ``from ros2_typed_launch.examples.turtle_teleop_launch import turtle_teleop``
+    ``from lte_launch.examples.turtle_teleop_launch import turtle_teleop``
     -- it is the same module either way. ``load_launch`` is for addressing a
     launch dynamically, by name.
     """

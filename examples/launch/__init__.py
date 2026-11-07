@@ -1,7 +1,7 @@
 # Re-export every launch's function and config type, so any of them can be
-# reached with `from ros2_typed_launch.examples import <fn>, <Config>`
+# reached with `from lte_launch.examples import <fn>, <Config>`
 # without naming the submodule. The submodule-qualified form
-# (`from ros2_typed_launch.examples.turtle_demo_launch import ...`) always
+# (`from lte_launch.examples.turtle_demo_launch import ...`) always
 # works too and is unambiguous when two launches ever reuse a name.
 from .composition_launch import composition, CompositionConfig  # noqa: F401
 from .lifecycle_launch import lifecycle, LifecycleConfig  # noqa: F401

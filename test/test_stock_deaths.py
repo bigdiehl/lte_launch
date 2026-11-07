@@ -13,7 +13,7 @@ import textwrap
 import pytest
 from pydantic import BaseModel
 
-from ros2_typed_launch import engine, include, launch, shutdown, sleep
+from lte_launch import engine, include, launch, shutdown, sleep
 
 CMD = "cmd '/opt/ros/jazzy/lib/demo_nodes_cpp/talker'"
 

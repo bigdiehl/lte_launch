@@ -4,11 +4,11 @@ launching anything: target lookup, config files, validation, a dry run."""
 import pytest
 
 pytest.importorskip("launch_ros")
-pytest.importorskip("ros2_typed_launch.examples")
+pytest.importorskip("lte_launch.examples")
 
-from ros2_typed_launch import cli  # noqa: E402
+from lte_launch import cli  # noqa: E402
 
-PKG = "ros2_typed_launch"
+PKG = "lte_launch"
 CONFIG = f"{PKG}:examples/config"
 
 # Every example, and the config files it is documented with.
@@ -27,7 +27,7 @@ EXAMPLES = {
 def test_every_example_configures_and_plans(capsys):
     from launch import LaunchDescription
 
-    from ros2_typed_launch import loader
+    from lte_launch import loader
 
     for name, configs in EXAMPLES.items():
         flags = [a for c in configs for a in ("--config", c)]

@@ -2,8 +2,8 @@
 
 import pytest
 
-from ros2_typed_launch import config as cfg
-from ros2_typed_launch import ros_config as rc
+from lte_launch import config as cfg
+from lte_launch import ros_config as rc
 
 
 # ------------------------------------------------------------------ patterns

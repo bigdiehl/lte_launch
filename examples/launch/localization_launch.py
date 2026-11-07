@@ -3,7 +3,7 @@
 
 from pydantic import BaseModel, Field
 
-from ros2_typed_launch import launch, node
+from lte_launch import launch, node
 
 
 class LocalizationConfig(BaseModel):

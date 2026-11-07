@@ -23,12 +23,12 @@ for tool in tmux tlaunch lte-run; do
     command -v "$tool" >/dev/null || { echo "missing: $tool" >&2; exit 1; }
 done
 
-launch=(ros2_typed_launch turtle_bringup_launch.py --teleop)
+launch=(lte_launch turtle_bringup_launch.py --teleop)
 case "$MODE" in
     dash)  args=(--tmux-dash) ;;
     tmux)  args=(--tmux) ;;
     flaky) args=(--tmux-dash --crash_after 5) ;;
-    plain) exec tlaunch ros2_typed_launch turtle_bringup_launch.py ;;
+    plain) exec tlaunch lte_launch turtle_bringup_launch.py ;;
     *)     sed -n '2,10p' "$0"; exit 2 ;;
 esac
 

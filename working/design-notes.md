@@ -130,8 +130,8 @@ validation, `$(var)`) and `cli.build_actions`. tlaunch itself reads `.typed_targ
 calls it. Scripts still raise "run it with tlaunch".
 
 Finding the file: stock includes by path; ours live in the Python package and break their
-relative imports when loaded by path. `ros2_typed_launch_install_stubs(<py pkg> <module>...)`
-(CMake, `cmake/ros2_typed_launch-extras.cmake`) installs a one-line stub per module into
+relative imports when loaded by path. `lte_launch_install_stubs(<py pkg> <module>...)`
+(CMake, `cmake/lte_launch-extras.cmake`) installs a one-line stub per module into
 `share/<pkg>/launch/` that imports it by package path. So `ros2 launch <pkg> <module>.py` and
 `$(find-pkg-share pkg)/launch/<module>.py` both work.
 
@@ -385,7 +385,7 @@ contracts. The launch composes a node's schema where one exists and delegates to
 lane where it doesn't. That dissolves the "the schema cannot really be complete" tension: it is
 complete *for the launch*.
 
-Open: whether tier 2 belongs in this project at all (it makes `ros2_typed_launch` a node-side
+Open: whether tier 2 belongs in this project at all (it makes `lte_launch` a node-side
 library too, not just a launch front end) or in a sibling package; whether tier 3 scaffolding
 is worth building before tier 1 is in use.
 
@@ -730,10 +730,10 @@ checks.node("/demo/turtlesim", timeout=10, then=[driver,
   of the node list. No second rclpy context.
 * failure: `[ERROR] [tlaunch]: check failed: ...`, recorded on the monitor (summary, exit 1),
   then `Shutdown` unless `on_fail="continue"`. The monitor puts itself in the context's
-  globals (`ros2_typed_launch_monitor`); that is also how an output check sees lines printed
+  globals (`lte_launch_monitor`); that is also how an output check sees lines printed
   before it started.
 * under stock `ros2 launch` checks run the same; only the summary and exit code are missing.
-* not a package-level export (`from ros2_typed_launch import checks` imports the submodule):
+* not a package-level export (`from lte_launch import checks` imports the submodule):
   `checks.py` needs `launch` at import time, and the package must import without ROS.
 
 ### Node log levels and command lines (Q31) — BUILT (2026-11-01)
@@ -754,13 +754,13 @@ running, tmux) with one-line help. `tlaunch -h` with no launch lists every optio
 nothing else needed, no wrapper script of our own. Mechanism: `ament_cmake_core` registers a
 default `path.sh` environment hook for every package that prepends `<prefix>/bin` to `PATH` if
 that directory exists (the same hook that puts `ros2` itself on `PATH`); installing
-`scripts/tlaunch` to `bin/` (in addition to `lib/ros2_typed_launch/`, kept for `ros2 run
-ros2_typed_launch tlaunch`) triggers it. Side benefit: a real script composes normally where a
+`scripts/tlaunch` to `bin/` (in addition to `lib/lte_launch/`, kept for `ros2 run
+lte_launch tlaunch`) triggers it. Side benefit: a real script composes normally where a
 shell function couldn't (`timeout ... tlaunch ...` works directly).
 
 **Done: tab completion**, matching `ros2 launch`'s own UX (package names, then that package's
 launch files) — via `argcomplete` (`python3-argcomplete`, apt, the same library `ros2cli`
-uses), also wired to fire from `install/setup.bash` alone: `ros2_typed_launch/hook/
+uses), also wired to fire from `install/setup.bash` alone: `lte_launch/hook/
 tlaunch-completion.bash`, registered via `ament_environment_hooks()` exactly like the `path.sh`
 hook above, runs `eval "$(register-python-argcomplete tlaunch)"`. `cli.py` builds a small
 parser used only by `argcomplete` (two positionals, `package` and `file`, each with a completer

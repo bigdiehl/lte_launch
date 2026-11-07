@@ -30,7 +30,7 @@ def _check_pydantic_version() -> None:
     parse_obj, ...) with a confusing AttributeError."""
     if not pydantic.VERSION.startswith("1."):
         raise ImportError(
-            f"ros2_typed_launch needs Pydantic 1.x (the system package, "
+            f"lte_launch needs Pydantic 1.x (the system package, "
             f"apt install python3-pydantic), but found {pydantic.VERSION} at "
             f"{pydantic.__file__}. schema.py uses the v1 API (__fields__, "
             "parse_obj, .schema(), ...) which Pydantic 2 does not have. "
