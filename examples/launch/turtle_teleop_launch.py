@@ -4,17 +4,18 @@
 # it with `tlaunch ros2_typed_launch turtle_teleop_launch.py --tmux` (it needs a TTY), or import it
 # directly, e.g. `from ros2_typed_launch.examples.turtle_teleop_launch import
 # turtle_teleop, TeleopConfig`.
-
-from pydantic import BaseModel
+#
+# The signature is the schema: one flag per parameter (--namespace), no config
+# class. turtle_teleop.config_type is the generated model.
 
 from ros2_typed_launch import launch, node, window
 
 
-class TeleopConfig(BaseModel):
-    namespace: str = ""
-
-
 @launch
-def turtle_teleop(config: TeleopConfig):
+def turtle_teleop(namespace: str = ""):
+    """Keyboard teleop for a turtlesim turtle."""
     with window("input"):
-        node("turtlesim", "turtle_teleop_key", name="teleop", namespace=config.namespace)
+        node("turtlesim", "turtle_teleop_key", name="teleop", namespace=namespace)
+
+
+TeleopConfig = turtle_teleop.config_type

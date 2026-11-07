@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field
 from ros2_typed_launch import include, launch, node
 
 from .localization_launch import localization, LocalizationConfig
-from .turtle_teleop_launch import turtle_teleop, TeleopConfig
+from .turtle_teleop_launch import turtle_teleop
 
 
 class TurtlesimConfig(BaseModel):
@@ -65,7 +65,7 @@ def turtle_demo(config: TurtleDemoConfig):
     sim.wait_for_node()
 
     if config.teleop.enabled:
-        include(turtle_teleop, TeleopConfig(namespace=ts.namespace))
+        include(turtle_teleop, namespace=ts.namespace)
 
     if config.localization.enabled:
         # config.localization.params is already a LocalizationConfig -- pass it
