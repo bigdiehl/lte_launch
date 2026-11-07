@@ -172,6 +172,10 @@ A node's parameters and remaps, lowest first:
 | Config | Matching node sections, `--ros-param`, `--ros-remap` |
 | The node's own | `params=` (RosParams or dict; typed beats untyped, a note under `-d`), `remaps=` |
 
+- `$(...)` in any value uses the stock grammar (`$(env V)`, `$(find-pkg-share p)`, and
+  `$(var NAME)` for this launch's own arguments). A substituted parameter is read as YAML again,
+  as stock does (`$(env RATE 30)` is 30); quote inside to keep a string (`"'$(env V)'"`); an
+  empty result is an error. `--show-config` notes `from $(...)` on it.
 - Applies to `node()`, `container()` and `load()`; not to `process()` or a stock include.
 - Node sections reach a node only with a `name`; the namespace comes from `namespace()` scopes.
 - Every run writes the effective config to `/tmp/tlaunch/<launch>-<pid>.yaml`; `--show-config`

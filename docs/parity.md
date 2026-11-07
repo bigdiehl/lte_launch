@@ -74,7 +74,8 @@ Status: **yes** built, **partial** built with a gap, **todo** planned, **no** no
 
 ## Substitutions
 
-All replaced by Python; `$(...)` in config files still uses the stock grammar (`subst.py`).
+All replaced by Python; `$(...)` in config files still uses the stock grammar (`subst.py`), and a
+substituted parameter is typed again from YAML, as launch_ros does.
 
 | Stock | Here |
 |---|---|

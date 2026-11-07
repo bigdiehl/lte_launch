@@ -113,6 +113,7 @@ class Section:
     source: str  # config file path, or "cli"
     matched: list[str] = field(default_factory=list)
     shadowed: set[str] = field(default_factory=set)  # params a typed field won
+    substituted: dict[str, str] = field(default_factory=dict)  # param -> its $(...)
 
     def __post_init__(self):
         self._regex = pattern_regex(self.pattern)

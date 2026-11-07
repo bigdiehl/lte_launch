@@ -80,21 +80,69 @@ def _expand_text(text: str, where: str, variables: dict[str, str] | None) -> str
 
 
 def expand(
-    value: Any, where: str = "config", variables: dict[str, str] | None = None
+    value: Any,
+    where: str = "config",
+    variables: dict[str, str] | None = None,
+    typed: bool = False,
+    origins: dict[str, str] | None = None,
 ) -> Any:
     """Expand ``$(...)`` in every string in ``value`` (recursively).
 
     ``variables`` are what ``$(var NAME)`` can read. Anything without a ``$(``
     is returned untouched, so a config with no substitutions never loads the
-    parser at all.
+    parser at all. ``typed``: a substituted string reads as a parameter value
+    (``retype``), and ``origins`` gets ``{where: the text it came from}``.
     """
     if isinstance(value, str):
-        return _expand_text(value, where, variables) if MARKER in value else value
+        if MARKER not in value:
+            return value
+        text = _expand_text(value, where, variables)
+        if not typed:
+            return text
+        if origins is not None:
+            origins[where] = value
+        return retype(text, where)
     if isinstance(value, dict):
         return {
-            k: expand(v, f"{where}.{k}" if where else str(k), variables)
+            k: expand(v, f"{where}.{k}" if where else str(k), variables, typed, origins)
             for k, v in value.items()
         }
     if isinstance(value, list):
-        return [expand(v, f"{where}[{i}]", variables) for i, v in enumerate(value)]
+        return [
+            expand(v, f"{where}[{i}]", variables, typed, origins)
+            for i, v in enumerate(value)
+        ]
     return value
+
+
+#: what a substituted parameter may become (launch_ros's evaluate_parameters)
+_SCALARS = (bool, int, float, str)
+
+
+def retype(text: str, where: str) -> Any:
+    """A substituted ROS parameter, read as YAML the way stock launch_ros (and
+    ``-p name:=value``) reads it: ``"30"`` -> 30, ``"true"`` -> True. Kept as
+    text unless it is a scalar or a list of one scalar type; quote inside to
+    keep a string (``"'$(env VERSION)'"``). Nothing at all is an error: a ROS
+    parameter has no null."""
+    import yaml
+
+    try:
+        value = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return text
+    if value is None:
+        raise SubstitutionError(
+            f"{where}: substituted to {text!r}, and a ROS parameter cannot be "
+            "empty (for an empty string, quote it: \"''\")"
+        )
+    if isinstance(value, _SCALARS):
+        return value
+    if (
+        isinstance(value, list)
+        and value
+        and isinstance(value[0], _SCALARS)
+        and all(type(item) is type(value[0]) for item in value)
+    ):
+        return value
+    return text

@@ -81,6 +81,8 @@ def _merge_by_pattern(ros: rc.RosConfig) -> dict[str, dict]:
         )
         for name, value in section.params.items():
             note = section.source
+            if name in section.substituted:
+                note += f", from {section.substituted[name]}"
             if name in section.shadowed:
                 note += ", shadowed by a typed field"
             entry["params"][name] = (value, note)

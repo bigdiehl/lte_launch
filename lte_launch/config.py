@@ -96,11 +96,16 @@ def load_config_file(path: str) -> dict:
 
 
 def expand_values(
-    value: Any, source: str, variables: dict[str, str] | None = None
+    value: Any,
+    source: str,
+    variables: dict[str, str] | None = None,
+    typed: bool = False,
+    origins: dict[str, str] | None = None,
 ) -> Any:
-    """Expand ``$(...)`` in every string in ``value`` (see ``subst.py``)."""
+    """Expand ``$(...)`` in every string in ``value`` (see ``subst.py``);
+    ``typed``: as parameter values (``subst.retype``)."""
     try:
-        return subst.expand(value, source, variables)
+        return subst.expand(value, source, variables, typed, origins)
     except subst.SubstitutionError as exc:
         raise ConfigFileError(str(exc)) from None
 
@@ -252,9 +257,12 @@ def expand_sections(sections: list[rc.Section], launch_args: dict) -> None:
             (rc.REMAPS_KEY, section.remaps),
         ):
             check_vars(values, f"{where}.{key}", usable, unusable)
-        section.params = expand_values(
-            section.params, f"{where}.{rc.PARAMS_KEY}", usable
-        )
+        # Parameters become typed again (Q25): "$(env RATE 30)" is 30, as in
+        # stock launch. Remaps are names: text.
+        prefix = f"{where}.{rc.PARAMS_KEY}"
+        origins: dict[str, str] = {}
+        section.params = expand_values(section.params, prefix, usable, True, origins)
+        section.substituted = {k[len(prefix) + 1 :]: v for k, v in origins.items()}
         section.remaps = expand_values(
             section.remaps, f"{where}.{rc.REMAPS_KEY}", usable
         )

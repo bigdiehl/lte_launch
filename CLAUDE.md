@@ -67,8 +67,9 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   are merged and validated, which is what lets a CLI override reach them. A `$(var ...)`
   naming no argument of this launch is caught **against the schema, together with the
   unknown-key check** (so a config meant for another launch reports every mismatch at
-  once, before expanding anything). A substitution always yields **text**, so a parameter
-  built from one is a string (Q25 has the open question about re-parsing).
+  once, before expanding anything). A substituted `ros__parameters` value is **read as YAML
+  again** (`subst.retype`, as stock launch_ros does): `$(env RATE 30)` is the int 30; quote
+  inside (`"'$(env V)'"`) to keep a string; an empty result is an error (Q25).
 - **`node(...)`** builds the node's command line itself (`command.py`: ament lookup,
   `--ros-args`, a params file) and starts it at once, merging every matching section into that
   node's parameters/remappings. `params=` takes a **`RosParams`**

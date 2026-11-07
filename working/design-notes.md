@@ -311,12 +311,22 @@ rcl does not even report a reason. So after expansion:
 
 Parameter *values* are left alone -- they are not names, and a value may legitimately contain `//`.
 
-**Open, and a real foot-gun:** a substitution always produces **text**, so
-`ros__parameters: {port: $(env PORT)}` sets the *string* `"8080"`, and a node expecting an integer
-rejects it at runtime. Stock `ParameterFile(allow_substs=True)` does not have this problem because
-it substitutes into the raw file and re-parses the whole thing as YAML. The fix would be to re-parse
-a value that is **entirely** one substitution (`"69"` -> `69`), leaving mixed strings
-(`/$(var ns)/joy_vel`) alone. Not done: it changes types of existing configs, so it wants a decision.
+**Typed again -- decided and built 2026-11-07.** A substitution produces text, so
+`ros__parameters: {port: $(env PORT)}` used to set the *string* `"8080"`, which a node declaring an
+integer rejects at runtime. Now a `ros__parameters` leaf that contained `$(` is read as YAML after
+expansion (`subst.retype`), exactly as launch_ros's `evaluate_parameters` does and as
+`-p port:=8080` and our `--ros-param` already did:
+
+| Case | Result |
+|---|---|
+| Scalar, or a list of one scalar type | That value (`"8080"` -> 8080, `"true"` -> True) |
+| A dict, a mixed list, unparseable YAML | Kept as text |
+| Quoted inside, `"'$(env VERSION)'"` | A string (the stock idiom) |
+| Nothing (`""`, `null`) | An error naming the key: a ROS parameter has no null |
+| A leaf with no `$(`, remaps, patterns, `launch_args` | Untouched (YAML typed them already; names are text; Pydantic coerces) |
+
+Pitfalls are YAML 1.1's, the same as stock's: `1.10` -> 1.1, `yes` -> True, `007` -> 7; quote to
+avoid them. `--show-config` notes the origin: `# a.yaml, from $(env PORT)`.
 
 ### Node parameter schemas and introspection (Q24) — DEFERRED (parked 2026-09-27)
 

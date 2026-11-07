@@ -130,7 +130,8 @@ def test_expand_sections_resolves_values_and_the_pattern():
     assert section.pattern == "/alpha/turtlesim"
     assert section.matches("/alpha/turtlesim")  # the recompiled pattern
     assert not section.matches("/demo/turtlesim")
-    assert section.params == {"n": "7"}  # a substitution is always text
+    assert section.params == {"n": 7}  # a substituted parameter is typed again (Q25)
+    assert section.substituted == {"n": "$(var turtlesim.background_r)"}
     assert section.remaps == {"turtle1/cmd_vel": "/alpha/joy_vel"}
 
     # An empty namespace substituted into a path: ROS would reject
@@ -183,6 +184,23 @@ def test_expand_uses_the_stock_substitutions(monkeypatch):
     assert subst.expand("$(var turtlesim.background_r)", variables=variables) == "69"
     out = subst.expand({"a": ["$(var namespace)-$(env HOME)"]}, variables=variables)
     assert out["a"][0].startswith("alpha-/")
+
+    # Q25: a substituted parameter reads as YAML again, as in stock launch_ros;
+    # only a leaf that had a "$(" is touched, and ``origins`` says what it was.
+    monkeypatch.setenv("TLAUNCH_RATE", "30")
+    origins: dict = {}
+    out = subst.expand(
+        {"rate": "$(env TLAUNCH_RATE)", "on": "$(env X true)", "k": "$(env X 1.5)",
+         "ids": "$(env X '[1, 2]')", "mixed": "$(env X '[1, a]')",
+         "keep": "$(env X \"'007'\")", "plain": "30", "map": "$(env X '{a: 1}')"},
+        "p", typed=True, origins=origins,
+    )  # fmt: skip
+    assert out == {"rate": 30, "on": True, "k": 1.5, "ids": [1, 2],
+                   "mixed": "[1, a]", "keep": "007", "plain": "30", "map": "{a: 1}"}  # fmt: skip
+    assert origins["p.rate"] == "$(env TLAUNCH_RATE)" and "p.plain" not in origins
+    assert subst.expand("$(env TLAUNCH_RATE)") == "30"  # not typed: text
+    with pytest.raises(subst.SubstitutionError, match="cannot be empty"):
+        subst.expand({"x": "$(env TLAUNCH_NOT_SET '')"}, "p", typed=True)
 
 
 def test_a_failed_substitution_names_the_key_and_the_cause():
