@@ -1,9 +1,9 @@
 # lte_launch docs
 
-(Formerly `ros2_typed_launch`. Debian package: `ros-jazzy-lte-launch`.)
+(Formerly `ros2_typed_launch`, command `tlaunch`. Debian package: `ros-jazzy-lte-launch`.)
 
 Typed, schema-driven launch files for ROS 2 Jazzy. A Pydantic model is a launch's interface.
-The launch body is plain Python, run with `tlaunch`.
+The launch body is plain Python, run with `lte-launch`.
 
 These docs describe what is built and the direction it is going. Plans in progress and
 scratch notes live in [`../working/`](../working/README.md).
@@ -25,14 +25,14 @@ scratch notes live in [`../working/`](../working/README.md).
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install       # once, and after adding a launch/config file
-source install/setup.bash            # tlaunch on PATH, with tab completion
+source install/setup.bash            # lte-launch on PATH, with tab completion
 
-tlaunch lte_launch turtle_demo_launch.py -h       # options from the schema
-tlaunch lte_launch turtle_demo_launch.py \
+lte-launch lte_launch turtle_demo_launch.py -h       # options from the schema
+lte-launch lte_launch turtle_demo_launch.py \
     --config lte_launch:examples/config/blue_turtle.yaml \
     --turtlesim.background_r 99 --show-config           # layering + provenance, no launch
-tlaunch lte_launch turtle_bringup_launch.py --dry-run   # the plan, nothing started
-tlaunch lte_launch turtle_bringup_launch.py --tmux      # a pane per process
+lte-launch lte_launch turtle_bringup_launch.py --dry-run   # the plan, nothing started
+lte-launch lte_launch turtle_bringup_launch.py --tmux      # a pane per process
 ```
 
 ## Minimal launch
@@ -54,4 +54,4 @@ def turtles(config: Config):          # the annotation is the schema
 ```
 
 Save it as `<pkg>/launch/turtles_launch.py` (one dot, so it is importable), then run
-`tlaunch <pkg> turtles_launch.py --background_r 99`.
+`lte-launch <pkg> turtles_launch.py --background_r 99`.

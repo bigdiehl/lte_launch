@@ -1,5 +1,5 @@
 <!-- A stock launch file including a typed one (its stub in share/, see CMakeLists.txt).
-     Each schema field is a launch argument; tlaunch_config takes config files.
+     Each schema field is a launch argument; lte_launch_config takes config files.
        ros2 launch lte_launch stock_parent.launch.xml -->
 <launch>
   <arg name="namespace" default="stock"/>
@@ -8,7 +8,7 @@
       <arg name="turtlesim.namespace" value="$(var namespace)"/>
       <arg name="turtlesim.background_r" value="200"/>
       <arg name="localization.enabled" value="false"/>
-      <arg name="tlaunch_config" value="lte_launch:examples/config/quiet.yaml"/>
+      <arg name="lte_launch_config" value="lte_launch:examples/config/quiet.yaml"/>
     </include>
   </group>
 </launch>

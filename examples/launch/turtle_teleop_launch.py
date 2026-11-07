@@ -1,7 +1,7 @@
 # turtle_teleop_launch.py -- keyboard teleop for a turtlesim turtle.
 #
 # An ordinary Python module (part of the lte_launch package): run
-# it with `tlaunch lte_launch turtle_teleop_launch.py --tmux` (it needs a TTY), or import it
+# it with `lte-launch lte_launch turtle_teleop_launch.py --tmux` (it needs a TTY), or import it
 # directly, e.g. `from lte_launch.examples.turtle_teleop_launch import
 # turtle_teleop, TeleopConfig`.
 #

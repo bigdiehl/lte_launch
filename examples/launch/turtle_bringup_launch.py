@@ -4,11 +4,11 @@
 # Waits block. Ctrl-C or a death stops everything, all at once. No action
 # lists, no generate_launch_description line (the decorator exports it).
 #
-#   tlaunch lte_launch turtle_bringup_launch.py                # subprocesses
-#   tlaunch lte_launch turtle_bringup_launch.py --tmux         # libtmux_easy panes
-#   tlaunch lte_launch turtle_bringup_launch.py --tmux-dash --teleop
-#   tlaunch lte_launch turtle_bringup_launch.py --dry-run      # the plan only
-#   tlaunch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo $?
+#   lte-launch lte_launch turtle_bringup_launch.py                # subprocesses
+#   lte-launch lte_launch turtle_bringup_launch.py --tmux         # libtmux_easy panes
+#   lte-launch lte_launch turtle_bringup_launch.py --tmux-dash --teleop
+#   lte-launch lte_launch turtle_bringup_launch.py --dry-run      # the plan only
+#   lte-launch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo $?
 
 from pydantic import BaseModel, Field
 

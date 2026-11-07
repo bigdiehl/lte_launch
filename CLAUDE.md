@@ -1,13 +1,13 @@
 # lte_launch
 
-Package `lte_launch` (was `ros2_typed_launch`; renamed 2026-11-07 to match `lte_launch_test`,
-as the engine is libtmux_easy). Debian package via bloom: `ros-jazzy-lte-launch`. The command
-is still `tlaunch`; the repo directory and GitHub repo still carry the old name.
+Package `lte_launch`, command `lte-launch` (were `ros2_typed_launch` and `tlaunch`; renamed
+2026-11-07 to match `lte_launch_test` and libtmux_easy's `lte-*` commands). Debian package via
+bloom: `ros-jazzy-lte-launch`. Repo: `~/projects/lte_launch`, `github.com/bigdiehl/lte_launch`.
 
 Typed, schema-driven launch files for ROS 2 (Jazzy). A Pydantic model is the
 public interface of a launch; the launch body is plain Python that starts what it
 needs as it runs (`node()` starts the process there). Run with our own command,
-**`tlaunch`**. **Branch `engine-lte`**: the engine is libtmux_easy (`Processes`), not
+**`lte-launch`**. **Branch `engine-lte`**: the engine is libtmux_easy (`Processes`), not
 stock launch; the stock-engine code (monitor, tmux shim, dashboard, `@script`,
 checks) is removed on this branch. `main` still has the old design.
 
@@ -23,11 +23,11 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
 
 ## Direction (decided)
 
-- `tlaunch` is our own command (not a hook into `ros2 launch`), normal argparse syntax:
+- `lte-launch` is our own command (not a hook into `ros2 launch`), normal argparse syntax:
   flags are **snake_case, exactly the dotted field path** (`--planner.max_iterations`),
   `--x/--no-x` for bools, repeatable `--tags a --tags b` for lists, repeatable
   `--remap key=value` for dicts. No `name:=value`.
-- **A launch is addressed as `tlaunch <package> <file>` or `tlaunch <path>`.** `<file>`
+- **A launch is addressed as `lte-launch <package> <file>` or `lte-launch <path>`.** `<file>`
   is the **full filename, `.py` required** (`turtle_demo_launch.py`; the bare stem alone
   is rejected with a hint), found by **searching the package for a `*_launch.py` file
   with that name**, however deep (e.g. inside a nested `launch/` subpackage) — the way
@@ -80,7 +80,7 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   Wildcard *remappings* are ours: rcl does `/**` for parameters but rejects it for remap rules
   outright. The namespace comes from `with namespace()` scopes, so patterns see it.
 - **`--show-config` prints the effective config as a config file** — the same YAML **every
-  run writes** to `/tmp/tlaunch/<launch>-<pid>.yaml` and logs, so "what did that actually
+  run writes** to `/tmp/lte-launch/<launch>-<pid>.yaml` and logs, so "what did that actually
   launch with?" is always answerable, and the answer is valid `--config` input (it
   round-trips). Provenance sits on every value, in the node sections exactly as in
   `launch_args` (`# default`, `# <file>`, `# cli`, `, shadowed by a typed field`), with
@@ -109,7 +109,7 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   `--tmux`/`--tmux-dash` (a new session, or the current one inside tmux), none with
   `--dry-run`, or a test's own group. The body runs on the main thread; a wait blocks and
   fails on **any** death (an exit not in `exits`, default `(0,)`). After the body: the
-  `[tlaunch]: up` ready line, supervise until Ctrl-C/`shutdown()`/a `required` process
+  `[lte-launch]: up` ready line, supervise until Ctrl-C/`shutdown()`/a `required` process
   ending/a death, then **stop everything at once** (SIGINT, SIGTERM, SIGKILL; a second Ctrl-C
   kills). Exit 0 clean or interrupted, 1 a death or failed bringup, 2 a config error.
   `respawn=`, `required=`, `cwd=`, `env=`, `with environment()`, `--launch-prefix`.
@@ -129,14 +129,14 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   `lifecycle_at(name)` for one started elsewhere. A failed transition is a `LaunchError` at its
   line. Teardown sends `shutdown` to ours before the SIGINT (`finalize=False` opts out). Dry
   run: each transition is a `ros2 lifecycle set` command.
-- **lte_launch_test** runs a launch four ways (`examples/lte_test/`): `tlaunch` as one process
+- **lte_launch_test** runs a launch four ways (`examples/lte_test/`): `lte-launch` as one process
   gated on the ready line; `procs.build(target.build)`; `target.start(procs)` (any mode);
   `target.panes()` (dry-run plan).
 - **Stock interop**: a typed launch includes a stock file with `include("pkg",
   "file.launch.py", **args)`, run as one `ros2 launch` process (`stock_arg` converts values).
   The other way (`stock.py`): a typed launch's `generate_launch_description()` returns a
-  stock `LaunchDescription`, one argument per field plus `tlaunch_config`, validated at
-  include time, that runs one `tlaunch` process; `lte_launch_install_stubs(...)` in
+  stock `LaunchDescription`, one argument per field plus `lte_launch_config`, validated at
+  include time, that runs one `lte-launch` process; `lte_launch_install_stubs(...)` in
   CMake puts a stub in `share/<pkg>/launch/` so stock can find it. Design-notes Q17.
 - **Parity with stock launch** is tracked feature by feature in `docs/parity.md` (next:
   scopes into a stock include, `sigkill_timeout`).
@@ -152,7 +152,7 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   of restating it; explicitly parked 2026-09-27, the untyped lane covers the need for now).
 - **Interested, not started:** units (`--robot.radius "22 cm"`); plan in
   `schema-interface-and-input-dict.md`, decisions U1–U6 pending.
-- License is not a concern for now.
+- License: MIT (`LICENSE`).
 
 ## Layout
 
@@ -162,7 +162,7 @@ package. It is built in a separate colcon workspace, **`~/ros2_ws`**, where
 
 - `package.xml`/`CMakeLists.txt`: `ament_python_install_package(${PROJECT_NAME})` installs
   the library; a second call installs `examples/launch/` as the subpackage
-  `lte_launch.examples`. `scripts/tlaunch` goes to `bin/`
+  `lte_launch.examples`. `scripts/lte-launch` goes to `bin/`
   and `lib/lte_launch/`. `cmake/lte_launch-extras.cmake` defines
   `lte_launch_install_stubs()` (exported, and used here for the examples).
   `ament_add_pytest_test` wires `test/` into `colcon test`.
@@ -177,7 +177,7 @@ package. It is built in a separate colcon workspace, **`~/ros2_ws`**, where
   (`$(...)` expansion), `lifecycle.py` (lifecycle nodes), `effective.py` (the effective
   config as a loadable YAML file),
   `stock.py` (a typed launch as a stock `LaunchDescription`).
-- `scripts/` — `tlaunch`.
+- `scripts/` — `lte-launch`.
 - `test/` — pytest suite (one test per behaviour, many assertions each — add assertions to
   the matching test rather than a new test per case). `test_examples.py` builds every example.
   Tests that start real processes are marked **`live`** (`test_supervision`, `test_waits`,
@@ -209,7 +209,7 @@ package. It is built in a separate colcon workspace, **`~/ros2_ws`**, where
 
 ROS 2 Jazzy at `/opt/ros/jazzy`, Python 3.12, Ubuntu 24.04. colcon,
 pytest and Pydantic all come from the **system** (`python3-pydantic` v1.10, apt/rosdep) —
-`ros2`/`tlaunch` run on `/usr/bin/python3`, which sees it by default. **Exception:
+`ros2`/`lte-launch` run on `/usr/bin/python3`, which sees it by default. **Exception:
 libtmux_easy** (the engine) is not installed for system Python here: until its `.deb` is,
 `export PYTHONPATH=~/projects/libtmux_easy/src:$PYTHONPATH` (0.4.0+, or its release `.deb`).
 Build and run from the **workspace** (`~/ros2_ws`): source ROS, then its install overlay. A
@@ -219,45 +219,45 @@ clean CMake configure picks `~/.local/bin/python3.10` (no catkin_pkg): pass
 ```bash
 cd ~/ros2_ws                                                          # the workspace
 source /opt/ros/jazzy/setup.bash && colcon build --symlink-install    # build
-source install/setup.bash         # tlaunch on PATH + tab completion come from this alone
+source install/setup.bash         # lte-launch on PATH + tab completion come from this alone
 
-python3 -m pytest ~/projects/ros2_typed_launch/test -q               # tests (~45 s)
-python3 -m pytest ~/projects/ros2_typed_launch/test -q -m "not live"  # quick: nothing starts (~1 s)
+python3 -m pytest ~/projects/lte_launch/test -q               # tests (~45 s)
+python3 -m pytest ~/projects/lte_launch/test -q -m "not live"  # quick: nothing starts (~1 s)
 colcon test --packages-select lte_launch && colcon test-result
 
-tlaunch lte_launch turtle_demo_launch.py -h              # schema-generated help
-tlaunch lte_launch turtle_demo_launch.py \
+lte-launch lte_launch turtle_demo_launch.py -h              # schema-generated help
+lte-launch lte_launch turtle_demo_launch.py \
     --config lte_launch:examples/config/blue_turtle.yaml \
     --config lte_launch:examples/config/quiet.yaml \
     --turtlesim.background_r 99 --show-config                        # layering + provenance, no launch
-tlaunch lte_launch turtle_params_launch.py \
+lte-launch lte_launch turtle_params_launch.py \
     --config lte_launch:examples/config/params_demo.yaml --show-config
                         # typed RosParams + untyped ros__parameters/ros__remappings,
                         # with which node pattern matched which node
-tlaunch lte_launch turtle_bringup_launch.py              # start, wait, supervise
-tlaunch lte_launch turtle_bringup_launch.py --dry-run    # every command line
-tlaunch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo "exit: $?"  # 1
-tlaunch lte_launch turtle_bringup_launch.py --tmux --teleop   # a pane per process
-tlaunch lte_launch composition_launch.py                 # composable nodes
-tlaunch lte_launch turtle_params_launch.py --log-level debug --log-commands
+lte-launch lte_launch turtle_bringup_launch.py              # start, wait, supervise
+lte-launch lte_launch turtle_bringup_launch.py --dry-run    # every command line
+lte-launch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo "exit: $?"  # 1
+lte-launch lte_launch turtle_bringup_launch.py --tmux --teleop   # a pane per process
+lte-launch lte_launch composition_launch.py                 # composable nodes
+lte-launch lte_launch turtle_params_launch.py --log-level debug --log-commands
 examples/run.sh                   # the dashboard (opens tmux if needed)
 examples/lte_test/run.sh -v       # under lte_launch_test
-tlaunch <file_launch.py> --schema                                    # JSON Schema
+lte-launch <file_launch.py> --schema                                    # JSON Schema
 ```
 
-`tlaunch` is a **real installed script**, on `PATH` once `install/setup.bash` is sourced —
+`lte-launch` is a **real installed script**, on `PATH` once `install/setup.bash` is sourced —
 that's the only thing needed, for this and for tab completion alike.
 `CMakeLists.txt` installs it to both `bin/` — picked up by
 `ament_cmake_core`'s default `path.sh` environment hook, the same mechanism that puts
 `ros2` itself on `PATH` — and `lib/lte_launch/`, where `ros2 run lte_launch
-tlaunch` looks. Not a shell function any more, so it composes normally (`timeout ...
-tlaunch ...` works). **Tab completion** (package names, then that package's
+lte-launch` looks. Not a shell function any more, so it composes normally (`timeout ...
+lte-launch ...` works). **Tab completion** (package names, then that package's
 `*_launch.py` files, like `ros2 launch`) is wired via `argcomplete`
 (`python3-argcomplete`, apt): `cli.main()` calls `argcomplete.autocomplete()`
 unconditionally but cheaply (a no-op unless actually invoked by a completion hook), and
-`hook/tlaunch-completion.bash` — a real `ament_environment_hooks()`
+`hook/lte-launch-completion.bash` — a real `ament_environment_hooks()`
 hook, sourced automatically by `install/setup.bash`, exactly like the `path.sh` hook
-above — runs `eval "$(register-python-argcomplete tlaunch)"`. Both degrade to nothing (no
+above — runs `eval "$(register-python-argcomplete lte-launch)"`. Both degrade to nothing (no
 completion, no crash) if `argcomplete` isn't installed. Python edits in this repo take
 effect immediately, live, without a rebuild (`--symlink-install` symlinks each installed
 `.py` file directly to its source). A **new** launch/config file or package needs a
@@ -267,7 +267,7 @@ Headless / scripted runs (no display, no TTY):
 
 ```bash
 export QT_QPA_PLATFORM=offscreen             # turtlesim without a display
-timeout --foreground -s INT 20 tlaunch ... > log 2>&1
+timeout --foreground -s INT 20 lte-launch ... > log 2>&1
 # or let it end itself: a `required=True` process, or `shutdown()` in the body
 ```
 
@@ -306,7 +306,7 @@ timeout --foreground -s INT 20 tlaunch ... > log 2>&1
 - A node is only matchable by a node pattern if it is started with `node(...)` (or
   `load()`) **and given a `name`**; the namespace is the `namespace()` scope's.
 - After a schema shape changes (a field moves into a nested model), update any
-  `--config` YAML that used the old shape — `tlaunch` catches a stale key as "unknown
+  `--config` YAML that used the old shape — `lte-launch` catches a stale key as "unknown
   key", but only when that file is actually used again.
 - `schema.py` checks the Pydantic version at import time (`_check_pydantic_version`,
   requires v1.x) — if you ever see its `ImportError`, a stray pip-installed v2 is shadowing
@@ -321,8 +321,8 @@ timeout --foreground -s INT 20 tlaunch ... > log 2>&1
   inside functions) so tests run without them.
 - Values reach Pydantic as **strings** from the CLI and rely on lax coercion. Lists/dicts
   of models and other complex types have no flag — set them via `--config`.
-- Pydantic silently drops unknown keys unless `extra="forbid"`; tlaunch checks YAML keys
-  itself (`schema.unknown_keys`). A schema field named like a tlaunch option (`config`,
+- Pydantic silently drops unknown keys unless `extra="forbid"`; lte-launch checks YAML keys
+  itself (`schema.unknown_keys`). A schema field named like a lte-launch option (`config`,
   `schema`, `debug`, ...) is a clean error.
 - The launch target must come **before** the first schema flag.
 - Two files sharing a `*_launch.py` stem raise an "ambiguous" error naming both dotted
@@ -339,6 +339,6 @@ timeout --foreground -s INT 20 tlaunch ... > log 2>&1
   60–80 columns, type hints, short docstrings.
 - Reference: stock launch CLI source is
   `/opt/ros/jazzy/lib/python3.12/site-packages/ros2launch/` (~500 lines; machinery is in
-  `launch/`/`launch_ros/` beside it — `tlaunch` no longer depends on `ros2launch.api`
+  `launch/`/`launch_ros/` beside it — `lte-launch` no longer depends on `ros2launch.api`
   itself). `ament_cmake_python`'s macros: `/opt/ros/jazzy/share/ament_cmake_python/cmake/`;
   `ament_cmake_pytest`'s: `/opt/ros/jazzy/share/ament_cmake_pytest/cmake/`.

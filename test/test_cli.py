@@ -54,7 +54,7 @@ def test_split_target_and_completion(sample_launch, fake_package, monkeypatch):
         ["pkg", "x_launch"],
         ["--a.b", "1"],
     )
-    # tlaunch's own options may appear before or between the target's parts.
+    # lte-launch's own options may appear before or between the target's parts.
     assert cli.split_target(
         ["--config", "c.yaml", "-d", "pkg", "--schema", "x_launch"]
     ) == (
@@ -67,7 +67,7 @@ def test_split_target_and_completion(sample_launch, fake_package, monkeypatch):
         ["--x", "1", "x_launch"],
     )
 
-    # Completions are full filenames (".py" included), matching what tlaunch
+    # Completions are full filenames (".py" included), matching what lte-launch
     # now requires you to type.
     parsed_args = argparse.Namespace(package=fake_package)
     assert set(cli._complete_launch_file("", parsed_args)) == {
@@ -87,7 +87,7 @@ def test_split_target_and_completion(sample_launch, fake_package, monkeypatch):
 # --------------------------------------------------------------- completion
 def test_resolving_the_target(capsys, tmp_path, fake_package):
     code, out, _ = run([], capsys)
-    assert code == 0 and "usage: tlaunch" in out
+    assert code == 0 and "usage: lte-launch" in out
 
     path = tmp_path / "plain_launch.py"
     path.write_text("def generate_launch_description():\n    return None\n")
@@ -95,7 +95,7 @@ def test_resolving_the_target(capsys, tmp_path, fake_package):
     assert code == 2 and "not a typed launch file" in err
 
     code, _, err = run(["definitely_not_a_package", "x_launch"], capsys)
-    assert code == 2 and "tlaunch: error:" in err
+    assert code == 2 and "lte-launch: error:" in err
 
     code, out, err = run([fake_package, "main_launch.py", "--show-config"], capsys)
     assert code == 0, err
@@ -116,15 +116,15 @@ def test_help_and_schema(sample_launch, capsys):
     assert "[required]" in out and "[default: 0.9]" in out
     assert "(repeatable)" in out
     assert "robots (robot)" in out.replace("\n", " ") or "robots" in out  # epilog
-    # The launch's own arguments come first, then tlaunch's, in three groups.
+    # The launch's own arguments come first, then lte-launch's, in three groups.
     assert (
         out.index("planner  [Planner]")
-        < out.index("tlaunch: config")
-        < out.index("tlaunch: running")
-        < out.index("tlaunch: tmux")
+        < out.index("lte-launch: config")
+        < out.index("lte-launch: running")
+        < out.index("lte-launch: tmux")
     )
 
-    # tlaunch's options are exactly the ones target splitting knows about.
+    # lte-launch's options are exactly the ones target splitting knows about.
     parser = argparse.ArgumentParser()
     cli.add_own_args(parser)
     assert {o for a in parser._actions for o in a.option_strings} == cli.RESERVED
@@ -132,7 +132,7 @@ def test_help_and_schema(sample_launch, capsys):
     # No launch given: the general help still lists every option.
     assert cli.main(["-h"]) == 0
     out = capsys.readouterr().out
-    assert "tlaunch: tmux" in out and "--log-level" in out and "examples:" in out
+    assert "lte-launch: tmux" in out and "--log-level" in out and "examples:" in out
 
     code, out, _ = run([sample_launch, "--schema"], capsys)
     assert code == 0 and "map" in json.loads(out)["properties"]
@@ -261,7 +261,7 @@ def test_bad_values_are_reported_before_anything_starts(
         "generate_launch_description = c.generate_launch_description\n"
     )
     code, _, err = run([str(path), "--show-config"], capsys)
-    assert code == 2 and "collides with tlaunch's own option --config" in err
+    assert code == 2 and "collides with lte-launch's own option --config" in err
 
 
 def test_launch_args_is_checked_against_the_schema_but_node_sections_are_not(

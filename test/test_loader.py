@@ -24,13 +24,13 @@ def test_resolve_by_path(sample_launch, fake_package):
     # main_launch.py does `from .child_launch import ...`; loaded by path (no
     # parent package) that raises Python's ImportError, which we should turn
     # into a hint to use the <package> <module> form instead -- this is
-    # exactly the pitfall of running `tlaunch some_launch.py` from inside an
+    # exactly the pitfall of running `lte-launch some_launch.py` from inside an
     # installed package's launch/ directory.
     tpkg = importlib.import_module(fake_package)
     path = str(pathlib.Path(tpkg.__file__).parent / "main_launch.py")
     with pytest.raises(
         loader.LaunchLookupError,
-        match="no parent package.*tlaunch lte_launch",
+        match="no parent package.*lte-launch lte_launch",
     ):
         loader.resolve(path)
 

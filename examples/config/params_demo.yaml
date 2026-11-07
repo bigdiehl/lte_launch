@@ -18,7 +18,7 @@ launch_args:
 /$(var namespace)/turtlesim:
   ros__parameters:
     # Deliberately in conflict: holonomic is also a typed field of the schema,
-    # so the typed value wins and tlaunch warns, naming both.
+    # so the typed value wins and lte-launch warns, naming both.
     holonomic: true
   ros__remappings:
     # The "from" side is the name *as the node uses it*, so a relative name for

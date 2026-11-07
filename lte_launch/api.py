@@ -9,7 +9,7 @@
             sim.wait_for_node()                                     # blocks
             node("turtlesim", "turtle_teleop_key", name="teleop", window="input")
 
-Each call acts at once on the run ``tlaunch`` (or a test) set up; see
+Each call acts at once on the run ``lte-launch`` (or a test) set up; see
 ``engine.py``. Importable without ROS; ROS is touched only when something
 starts.
 """
@@ -50,7 +50,7 @@ def node_params(run: engine.Run, full: str | None, params: Any):
         run.ros.note_shadowed(full, clashes)
         if run.ros.debug:
             print(
-                f"tlaunch: warning: {full}: ros__parameters also sets "
+                f"lte-launch: warning: {full}: ros__parameters also sets "
                 f"{', '.join(repr(c) for c in clashes)}, which this launch declares "
                 f"as typed config; the typed value wins "
                 f"({', '.join(f'{c}={typed[c]!r}' for c in clashes)})",
@@ -296,6 +296,6 @@ def on_shutdown(fn: Callable | None = None, /, *, timeout: float | None = 10.0):
 
 
 def log(message: str) -> None:
-    """Print in tlaunch's style; silent in a dry run (nothing really happened)."""
+    """Print in lte-launch's style; silent in a dry run (nothing really happened)."""
     if not engine.current().dry:
         engine.log(message)

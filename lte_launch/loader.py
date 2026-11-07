@@ -23,7 +23,7 @@ A launch is addressed two ways:
   (``"launch/turtle_demo_launch.py"``), to disambiguate if more than one file
   shares a name.
 
-``resolve()`` is what ``tlaunch`` uses for its command-line target; ``load_launch``
+``resolve()`` is what ``lte-launch`` uses for its command-line target; ``load_launch``
 is the same thing, for use inside a launch file to ``include`` another one.
 """
 
@@ -37,7 +37,7 @@ import sys
 
 from .core import TypedTarget
 
-#: Filename suffixes tlaunch searches a package for.
+#: Filename suffixes lte-launch searches a package for.
 TARGET_SUFFIXES = ("_launch.py",)
 
 
@@ -60,7 +60,7 @@ def _typed_target_from_module(module, where: str) -> TypedTarget:
     typed = getattr(entry, "typed_target", None)
     if not isinstance(typed, TypedTarget):
         raise LaunchLookupError(
-            f"'{where}' is not a typed launch file (tlaunch only runs files built "
+            f"'{where}' is not a typed launch file (lte-launch only runs files built "
             "with @launch); use 'ros2 launch' for it"
         )
     return typed
@@ -71,7 +71,7 @@ def _load_from_path(path: str) -> TypedTarget:
     if real in _LOADED_BY_PATH:
         return _LOADED_BY_PATH[real]
 
-    name = "_tlaunch_" + re.sub(r"\W", "_", real)
+    name = "_lte_launch_" + re.sub(r"\W", "_", real)
     spec = importlib.util.spec_from_file_location(name, real)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
@@ -83,7 +83,7 @@ def _load_from_path(path: str) -> TypedTarget:
                 f"failed to load '{path}': {exc} (a file loaded by path has no "
                 "parent package, so it can't use relative imports; if it's "
                 "installed in a package, address it by name instead, e.g. "
-                "'tlaunch lte_launch turtle_demo_launch.py')"
+                "'lte-launch lte_launch turtle_demo_launch.py')"
             ) from exc
         raise LaunchLookupError(
             f"failed to load '{path}': {type(exc).__name__}: {exc}"

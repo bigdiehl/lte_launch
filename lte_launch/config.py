@@ -51,7 +51,7 @@ def resolve_config_ref(ref: str) -> str:
     """Turn a ``--config`` argument into a file path.
 
     ``<package>:<relative/path.yaml>`` refers to a file in that package's share
-    directory (the same place ``tlaunch <package> <launch_file>`` looks). A path
+    directory (the same place ``lte-launch <package> <launch_file>`` looks). A path
     that exists on disk always wins over that reading.
     """
     if os.path.exists(ref):

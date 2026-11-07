@@ -1,4 +1,4 @@
-"""Helpers for the live tests (real processes, ROS nodes, tlaunch itself).
+"""Helpers for the live tests (real processes, ROS nodes, lte-launch itself).
 
 The fixtures that use these are in conftest.py; tests import the plain
 helpers directly (``from _live import until, need_ros``).

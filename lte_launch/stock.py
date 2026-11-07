@@ -1,14 +1,14 @@
 """A typed launch as a stock ``LaunchDescription``, so stock launch can include it (Q17).
 
-    ros2 launch my_pkg my_launch.py turtlesim.namespace:=alpha tlaunch_config:=a.yaml
+    ros2 launch my_pkg my_launch.py turtlesim.namespace:=alpha lte_launch_config:=a.yaml
 
 Each schema field with a flag becomes a ``DeclareLaunchArgument`` named by its
 dotted path (required fields get no default, so stock reports them). One more,
-``tlaunch_config``, takes config files, ';'-separated. The arguments are
+``lte_launch_config``, takes config files, ';'-separated. The arguments are
 validated here, at include time, then the launch runs as **one process**:
-``tlaunch`` with the given values in a generated config file. Stock sees that
+``lte-launch`` with the given values in a generated config file. Stock sees that
 process start, stop on Ctrl-C, and exit non-zero if anything in it died; its
-nodes are tlaunch's, not stock's.
+nodes are lte-launch's, not stock's.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ import yaml
 from . import cli, schema
 from .core import TypedLaunch
 
-CONFIG_ARG = "tlaunch_config"
+CONFIG_ARG = "lte_launch_config"
 
 
 def _text(value) -> str:
@@ -46,18 +46,18 @@ def _value(spec: schema.FieldSpec, text: str):
 
 
 def _own_defaults() -> dict:
-    """tlaunch's own options at their defaults: none of them apply here."""
+    """lte-launch's own options at their defaults: none of them apply here."""
     parser = argparse.ArgumentParser()
     cli.add_own_args(parser)
     return {k[1:]: v for k, v in vars(parser.parse_args([])).items()}
 
 
 def target_args(typed: TypedLaunch) -> list[str]:
-    """How ``tlaunch`` addresses this launch: ``<package> <dotted.module>``, or
+    """How ``lte-launch`` addresses this launch: ``<package> <dotted.module>``, or
     the file's path when it is not in a package."""
     module = typed.factory.__module__
     package, _, rest = module.partition(".")
-    if rest and not module.startswith("_tlaunch_"):
+    if rest and not module.startswith("_lte_launch_"):
         return [package, rest]
     return [inspect.getfile(inspect.unwrap(typed.factory))]
 
@@ -118,11 +118,11 @@ def description(typed: TypedLaunch):
             cli.configure(typed, files, fields, _own_defaults(), as_flags=False)
         except cli.TlaunchError as exc:
             raise cli.TlaunchError(f"typed launch '{typed.name}': {exc}") from None
-        cmd = ["tlaunch", *target_args(typed)]
+        cmd = ["lte-launch", *target_args(typed)]
         for ref in files:
             cmd += ["--config", ref]
         if fields:
-            fd, path = tempfile.mkstemp(prefix=f"tlaunch-{typed.name}-", suffix=".yaml")
+            fd, path = tempfile.mkstemp(prefix=f"lte-launch-{typed.name}-", suffix=".yaml")
             with os.fdopen(fd, "w") as f:
                 yaml.safe_dump({"launch_args": _nest(fields)}, f)
             cmd += ["--config", path]
@@ -148,7 +148,7 @@ def description(typed: TypedLaunch):
         DeclareLaunchArgument(
             CONFIG_ARG,
             default_value="",
-            description="tlaunch config files, ';'-separated (launch_args and node sections)",
+            description="lte-launch config files, ';'-separated (launch_args and node sections)",
         )
     )
     return LaunchDescription(

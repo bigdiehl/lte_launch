@@ -1,7 +1,7 @@
 """Access to the config schema.
 
 All Pydantic-specific code lives in this module (Pydantic **1** API -- see
-working/design-notes.md). The rest of tlaunch only sees ``FieldSpec``,
+working/design-notes.md). The rest of lte-launch only sees ``FieldSpec``,
 ``Issue`` and ``SchemaError``, so the schema backend can be replaced later
 without touching the CLI or config layering.
 """

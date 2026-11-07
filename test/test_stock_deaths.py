@@ -26,7 +26,7 @@ def test_stock_line_parser():
     assert engine.stock_ended(died("talker-1", 3)) == ("talker-1", 12, 3)
     assert engine.stock_ended(died("talker-1", -11)) == ("talker-1", 12, -11)
     assert engine.stock_ended(died("my.node_x-12", 139, 7)) == ("my.node_x-12", 7, 139)
-    # as tlaunch echoes it: behind the include's own prefix
+    # as lte-launch echoes it: behind the include's own prefix
     assert engine.stock_ended("[w:inc] " + died("talker-1", 1)) == ("talker-1", 12, 1)
     clean = "[INFO] [talker-1]: process has finished cleanly [pid 4242]"
     assert engine.stock_ended(clean) == ("talker-1", 4242, 0)

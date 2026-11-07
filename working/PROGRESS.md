@@ -7,7 +7,7 @@ Design: `../docs/design.md`; goals: `../docs/goals.md`. Decisions and open quest
 
 | Area | What | Ref |
 |---|---|---|
-| Command | `tlaunch <pkg> <file>`, schema-generated flags/help, `--schema`, tab completion | Q12 |
+| Command | `lte-launch <pkg> <file>`, schema-generated flags/help, `--schema`, tab completion | Q12 |
 | Config | `--config` layering, `<pkg>:<path>`, `launch_args` + node sections, `--show-config`, saved effective config | Q6, Q8 |
 | Substitutions | `$(env/find-pkg-share/command/eval)`, `$(var NAME)` from the launch's own args | Q25 |
 | Node params | `node()`, typed `RosParams`, untyped `ros__parameters`/`ros__remappings`, `--strict` | Q8 |
@@ -27,16 +27,16 @@ Design: `../docs/design.md`; goals: `../docs/goals.md`. Decisions and open quest
 - libtmux_easy compatibility checked against `d37e15a`: all interfaces match. Fixed on our
   side: a pane shown in the dashboard closed when its process ended (`remain-on-exit` now
   set per pane too).
-- `load_config.py` removed: everything used from it is in tlaunch, except loading a
+- `load_config.py` removed: everything used from it is in lte-launch, except loading a
   directory of YAML files (not needed for now).
 
 ## Repo layout (2026-11-01)
 
-- The repo root is the package: `~/projects/ros2_typed_launch` (was `~/projects/ros2_launch`,
+- The repo root is the package: `~/projects/lte_launch` (was `~/projects/ros2_launch`,
   a colcon workspace with two packages under `src/`).
 - Workspace: `~/ros2_ws`, `src/lte_launch` → the repo.
 - The demo package is folded in as `examples/`, installed as `lte_launch.examples`
-  (`tlaunch lte_launch turtle_demo_launch.py`); `test_examples.py` builds each one.
+  (`lte-launch lte_launch turtle_demo_launch.py`); `test_examples.py` builds each one.
 - Merged branches deleted; only `main`.
 
 ## Synchronous launch status
@@ -56,7 +56,7 @@ Design: `docs/design.md`; stock parity: `docs/parity.md`.
 | Engine | Parallel teardown and the end sequence; `respawn`, `required`, `shutdown()`, `on_shutdown`, `stop_timeout`, `prefix`, `cwd`, scopes |
 | Schema | `@launch` from the annotation, `config=`, or the signature (P2) |
 | ROS | `component(into=)` (standalone, ours, elsewhere), lifecycle nodes, `ros_params`/`ros_remaps` scopes |
-| Interop | Stock include: one process, its deaths are ours. Stock includes us: one `tlaunch` process |
+| Interop | Stock include: one process, its deaths are ours. Stock includes us: one `lte-launch` process |
 | Tests | 90 (36 live, `-m "not live"` < 1 s); `colcon test` 91; `examples/lte_test` 8/8 |
 
 Next: rename to `lte_launch` (package `ros-jazzy-lte-launch`); CI; Q25 (re-type substituted

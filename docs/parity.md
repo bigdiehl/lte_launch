@@ -69,7 +69,7 @@ Status: **yes** built, **partial** built with a gap, **todo** planned, **no** no
 |---|---|---|
 | `IncludeLaunchDescription` of a typed file | `include(typed, config)`: a function call | yes |
 | `IncludeLaunchDescription` of a stock file | `include("pkg", "f.launch.py", **args)` or `include(path)`: one process; a `process has died` line is a death (`exits=`, `allow=`) | partial: no per-node view |
-| Stock includes us | Stub in `share/`; one `tlaunch` process | yes |
+| Stock includes us | Stub in `share/`; one `lte-launch` process | yes |
 | XML / YAML front ends | -- | no: stock files are included instead |
 
 ## Substitutions
@@ -93,7 +93,7 @@ substituted parameter is typed again from YAML, as launch_ros does.
 
 | Stock | Here | Status |
 |---|---|---|
-| `ros2 launch pkg file` | `tlaunch pkg file` | yes |
+| `ros2 launch pkg file` | `lte-launch pkg file` | yes |
 | `name:=value` | `--name value`, `--config` files | yes, typed |
 | `-s` / `--show-args` | `-h` (generated from the schema) | yes |
 | `-p` / `--print` | `--dry-run`, `--show-config` | yes |

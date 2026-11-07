@@ -27,7 +27,7 @@ In general, supporting some checks would be nice.
       -- tiled, re-applied as panes appear; --tmux-session NAME to pick the session.
     - [DONE] A process in a pane still reaches launch's log, the death report and
       Process.wait_output() (lte-run --tee; Q28).
-    - Still missing: nested tlaunch includes are not expanded.
+    - Still missing: nested lte-launch includes are not expanded.
 
 Eventually I'd like to incorporate some sort of node/launch manager. Framed as a tmux session to manage each launch/node
     - [DONE] Similar to https://gitlab.iiia.csic.es/socialminds/tools/launch_tui
@@ -50,7 +50,7 @@ Other
       -- ros__parameters / ros__remappings under node patterns, via node(); Q8
     - [DONE] Multiple configs, merged together. Showing source from each
       -- --show-config prints every value with its source
-    - [DONE] Cleanup --help -- launch arguments first, tlaunch options grouped
+    - [DONE] Cleanup --help -- launch arguments first, lte-launch options grouped
     - [DONE] Support $(command arg) syntax in config files
       -- and find-pkg-share/find-pkg-prefix/env/eval, via the stock launch parser; Q25
 
@@ -60,5 +60,5 @@ Other
 
 log all final commands, remappings, parameters
     - [PARTLY] parameters/remappings and the whole effective config are written to
-      /tmp/tlaunch/<launch>-<pid>.yaml on every run, and the path is logged.
+      /tmp/lte-launch/<launch>-<pid>.yaml on every run, and the path is logged.
     - [DONE] the final process command lines: --log-commands; Q31

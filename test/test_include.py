@@ -1,5 +1,5 @@
 """include(): a typed launch is a function call; a stock file is one process.
-Stock including a typed launch: one tlaunch process."""
+Stock including a typed launch: one lte-launch process."""
 
 import enum
 from pathlib import Path
@@ -62,7 +62,7 @@ def stocked(config):
 
 def run_stock(typed, **args):
     """What stock does with an include: set the arguments, then run each entity.
-    -> (the tlaunch command, its generated launch_args or None)."""
+    -> (the lte-launch command, its generated launch_args or None)."""
     from launch import LaunchContext
 
     context = LaunchContext()
@@ -75,7 +75,7 @@ def run_stock(typed, **args):
 
     cmd = [perform_substitutions(context, part) for part in proc.cmd]
     generated = None
-    if cmd[-2] == "--config" and "tlaunch-stocked-" in cmd[-1]:
+    if cmd[-2] == "--config" and "lte-launch-stocked-" in cmd[-1]:
         generated = yaml.safe_load(open(cmd[-1]))["launch_args"]
     return cmd, generated
 
@@ -89,23 +89,23 @@ def test_stock_launch_includes_a_typed_one(tmp_path):
         for e in stocked.generate_launch_description().entities
         if isinstance(e, DeclareLaunchArgument)
     }
-    assert list(declared) == ["name", "inner.r", "inner.enabled", "inner.tags", "tlaunch_config"]
+    assert list(declared) == ["name", "inner.r", "inner.enabled", "inner.tags", "lte_launch_config"]
     assert declared["name"].default_value is None  # required: stock checks it
     assert declared["inner.r"].description == "Red (>=0, <=255)"
 
     cmd, generated = run_stock(stocked, name="a", **{"inner.r": "7", "inner.tags": "[x, y]"})
     # not in a package: by path (realpath: colcon test runs it via src/'s symlink)
-    assert cmd[0] == "tlaunch" and Path(cmd[1]).resolve() == Path(__file__).resolve()
+    assert cmd[0] == "lte-launch" and Path(cmd[1]).resolve() == Path(__file__).resolve()
     assert generated == {"name": "a", "inner": {"r": "7", "tags": ["x", "y"]}}
 
     # defaults < files < arguments: the files first, the arguments last.
     extra = tmp_path / "extra.yaml"
     extra.write_text("launch_args: {inner: {r: 5, enabled: false}}\n")
-    cmd, generated = run_stock(stocked, name="a", tlaunch_config=str(extra))
+    cmd, generated = run_stock(stocked, name="a", lte_launch_config=str(extra))
     assert cmd[cmd.index("--config") + 1] == str(extra)
     assert generated == {"name": "a"}
 
-    # Errors read as tlaunch's do, named by argument, at include time.
+    # Errors read as lte-launch's do, named by argument, at include time.
     with pytest.raises(Exception, match=r"(?s)typed launch 'stocked'.*inner\.r: ensure"):
         run_stock(stocked, name="a", **{"inner.r": "999"})
     with pytest.raises(Exception, match=r"did you mean 'inner\.enabled'"):

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Demo of tlaunch's tmux modes, on turtle_bringup_launch.py.
+# Demo of lte-launch's tmux modes, on turtle_bringup_launch.py.
 #
 #   ./run.sh            dashboard (default)
 #   ./run.sh tmux       a pane per process, no dashboard
@@ -12,14 +12,14 @@ set -euo pipefail
 
 WS="${TLAUNCH_WS:-$HOME/ros2_ws}"
 MODE="${1:-dash}"
-SESSION="tlaunch-demo"
+SESSION="lte-launch-demo"
 
 set +u
 source /opt/ros/jazzy/setup.bash
 source "$WS/install/setup.bash"
 set -u
 
-for tool in tmux tlaunch lte-run; do
+for tool in tmux lte-launch lte-run; do
     command -v "$tool" >/dev/null || { echo "missing: $tool" >&2; exit 1; }
 done
 
@@ -28,7 +28,7 @@ case "$MODE" in
     dash)  args=(--tmux-dash) ;;
     tmux)  args=(--tmux) ;;
     flaky) args=(--tmux-dash --crash_after 5) ;;
-    plain) exec tlaunch lte_launch turtle_bringup_launch.py ;;
+    plain) exec lte-launch lte_launch turtle_bringup_launch.py ;;
     *)     sed -n '2,10p' "$0"; exit 2 ;;
 esac
 
@@ -38,5 +38,5 @@ if [[ -z "${TMUX:-}" ]]; then
         "'$0' '$MODE'; echo; read -rp 'run.sh done, Enter to close '"
 fi
 
-tlaunch "${launch[@]}" "${args[@]}" && status=0 || status=$?
-echo "tlaunch exit: $status"
+lte-launch "${launch[@]}" "${args[@]}" && status=0 || status=$?
+echo "lte-launch exit: $status"

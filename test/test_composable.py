@@ -229,7 +229,7 @@ def test_missing_container_and_failed_loads(make_run, uniq, capsys):
     code, run = execute(make_run, body)
     out = capsys.readouterr().out
     assert code == 1 and reached == []
-    assert "[ERROR] [tlaunch]: /box2: failed to load composition::Nope" in out
+    assert "[ERROR] [lte-launch]: /box2: failed to load composition::Nope" in out
     assert not any(p.running for p in run.started)
 
 

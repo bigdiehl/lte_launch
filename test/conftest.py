@@ -14,7 +14,7 @@ from _live import Probe, counter, need_ros
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "live: starts real processes (plain, ROS nodes, tlaunch itself); "
+        "live: starts real processes (plain, ROS nodes, lte-launch itself); "
         'deselect with -m "not live"',
     )
 

@@ -2,8 +2,8 @@
 # schema, no validation, args are name:=value strings, declared with
 # DeclareLaunchArgument and read back with LaunchConfiguration. Installed to
 # share/lte_launch/launch/, like any stock launch file -- not part
-# of the Python package, so tlaunch's own search never finds it (by design:
-# this file is for `ros2 launch` or IncludeLaunchDescription, not `tlaunch`).
+# of the Python package, so lte-launch's own search never finds it (by design:
+# this file is for `ros2 launch` or IncludeLaunchDescription, not `lte-launch`).
 #
 # Included from a typed launch via stock_include_launch.py, which converts its
 # own typed config into this file's launch_arguments with actions.stock_args().

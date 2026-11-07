@@ -7,7 +7,7 @@ Runnable examples, installed as `lte_launch.examples` (configs in
 cd ~/ros2_ws                                           # the colcon workspace
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install                         # once, and after adding a file
-source install/setup.bash                              # puts tlaunch on PATH
+source install/setup.bash                              # puts lte-launch on PATH
 ```
 
 Any launch takes `-h` (help from its schema), `--show-config` (effective values and their
@@ -30,38 +30,38 @@ stops a run. Without a display: `export QT_QPA_PLATFORM=offscreen`.
 ### turtle_bringup_launch.py
 
 ```bash
-tlaunch lte_launch turtle_bringup_launch.py                # subprocesses
-tlaunch lte_launch turtle_bringup_launch.py --tmux --teleop  # a pane per process
-tlaunch lte_launch turtle_bringup_launch.py --tmux-dash    # + libtmux_easy dashboard
-tlaunch lte_launch turtle_bringup_launch.py --dry-run      # the plan only
-tlaunch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo $?   # a death: 1
+lte-launch lte_launch turtle_bringup_launch.py                # subprocesses
+lte-launch lte_launch turtle_bringup_launch.py --tmux --teleop  # a pane per process
+lte-launch lte_launch turtle_bringup_launch.py --tmux-dash    # + libtmux_easy dashboard
+lte-launch lte_launch turtle_bringup_launch.py --dry-run      # the plan only
+lte-launch lte_launch turtle_bringup_launch.py --crash_after 3 ; echo $?   # a death: 1
 ```
 
-A death prints `[ERROR] [tlaunch]: <who> died unexpectedly` with its last output, stops
+A death prints `[ERROR] [lte-launch]: <who> died unexpectedly` with its last output, stops
 everything at once and exits 1. A second Ctrl-C while stopping kills everything.
 
 ### turtle_demo_launch.py
 
 ```bash
-tlaunch lte_launch turtle_demo_launch.py \
+lte-launch lte_launch turtle_demo_launch.py \
     --turtlesim.background_r 99 --no-teleop.enabled --localization.params.x 2.5
-tlaunch lte_launch turtle_demo_launch.py \
+lte-launch lte_launch turtle_demo_launch.py \
     --config lte_launch:examples/config/blue_turtle.yaml \
     --config lte_launch:examples/config/quiet.yaml \
     --turtlesim.background_r 99 --show-config      # later files win, flags win over all
-tlaunch lte_launch localization_launch.py --x 1.0 --y 2.0 --yaw 0.5 --show-config
+lte-launch lte_launch localization_launch.py --x 1.0 --y 2.0 --yaw 0.5 --show-config
 ```
 
 ### turtle_params_launch.py
 
 ```bash
-tlaunch lte_launch turtle_params_launch.py --turtlesim.background_r 200
-tlaunch lte_launch turtle_params_launch.py \
+lte-launch lte_launch turtle_params_launch.py --turtlesim.background_r 200
+lte-launch lte_launch turtle_params_launch.py \
     --config lte_launch:examples/config/params_demo.yaml --show-config
-tlaunch lte_launch turtle_params_launch.py \
+lte-launch lte_launch turtle_params_launch.py \
     --ros-param '/**:use_sim_time=true' \
     --ros-remap '/demo/turtlesim:turtle1/cmd_vel=/joy_vel' --show-config
-tlaunch lte_launch turtle_params_launch.py \
+lte-launch lte_launch turtle_params_launch.py \
     --config lte_launch:examples/config/params_demo.yaml --strict   # refuses untyped
 ros2 param get /demo/turtlesim background_r       # while it runs
 ```
@@ -69,12 +69,12 @@ ros2 param get /demo/turtlesim background_r       # while it runs
 ### composition_launch.py
 
 ```bash
-tlaunch lte_launch composition_launch.py --topic /chat          # our container "box"
-tlaunch lte_launch composition_launch.py --container ""         # each standalone
+lte-launch lte_launch composition_launch.py --topic /chat          # our container "box"
+lte-launch lte_launch composition_launch.py --container ""         # each standalone
 ros2 run rclcpp_components component_container --ros-args -r __node:=box -r __ns:=/robot &
-tlaunch lte_launch composition_launch.py --container /robot/box # into that one
-tlaunch lte_launch composition_launch.py --kind multithreaded --dry-run
-tlaunch lte_launch composition_launch.py --plugin composition::Nope ; echo $?  # 1
+lte-launch lte_launch composition_launch.py --container /robot/box # into that one
+lte-launch lte_launch composition_launch.py --kind multithreaded --dry-run
+lte-launch lte_launch composition_launch.py --plugin composition::Nope ; echo $?  # 1
 ros2 component list                               # while it runs
 ```
 
@@ -84,11 +84,11 @@ components; it fails if that container goes away.
 ### lifecycle_launch.py
 
 ```bash
-tlaunch lte_launch lifecycle_launch.py                    # configure, activate
-tlaunch lte_launch lifecycle_launch.py --autostart        # the same, one keyword
-tlaunch lte_launch lifecycle_launch.py --blink 3          # deactivate, activate again
-tlaunch lte_launch lifecycle_launch.py --skip_configure ; echo $?   # refused: 1
-tlaunch lte_launch lifecycle_launch.py --dry-run          # `ros2 lifecycle set` lines
+lte-launch lte_launch lifecycle_launch.py                    # configure, activate
+lte-launch lte_launch lifecycle_launch.py --autostart        # the same, one keyword
+lte-launch lte_launch lifecycle_launch.py --blink 3          # deactivate, activate again
+lte-launch lte_launch lifecycle_launch.py --skip_configure ; echo $?   # refused: 1
+lte-launch lte_launch lifecycle_launch.py --dry-run          # `ros2 lifecycle set` lines
 ros2 lifecycle get /lc/lc_talker                                 # while it runs
 ```
 
@@ -97,7 +97,7 @@ At Ctrl-C the talker is sent `shutdown` (its `on_shutdown` runs) before the SIGI
 ### Stock interop
 
 ```bash
-tlaunch lte_launch stock_include_launch.py --namespace t1 --background_r 120
+lte-launch lte_launch stock_include_launch.py --namespace t1 --background_r 120
 ros2 launch lte_launch stock_parent.launch.xml
 ros2 launch lte_launch turtle_demo_launch.py -s          # one argument per field
 ros2 launch lte_launch turtle_demo_launch.py turtlesim.namespace:=a teleop.enabled:=false
@@ -105,7 +105,7 @@ ros2 launch lte_launch turtle_demo_launch.py turtlesim.namespace:=a teleop.enabl
 
 A typed launch includes a stock file as one `ros2 launch` process. A stock file includes a
 typed one through its stub in `share/` (`lte_launch_install_stubs` in CMake); the
-arguments are validated at include time, then it runs as one `tlaunch` process.
+arguments are validated at include time, then it runs as one `lte-launch` process.
 
 ### lte_test/
 
@@ -116,7 +116,7 @@ examples/lte_test/run.sh -v --tmux     # under the libtmux_easy dashboard
 
 | Class | How the launch runs |
 |---|---|
-| `TestAsProcess` | `tlaunch` as one process, gated on its `[tlaunch]: up` line |
+| `TestAsProcess` | `lte-launch` as one process, gated on its `[lte-launch]: up` line |
 | `TestBuild` | `procs.build(turtle_bringup.build)`: every node a process of the test |
 | `TestStart` | `turtle_bringup.start(procs)`: the same, in any mode |
 | `TestLayout` | `turtle_bringup.panes()`: the dry-run plan, started by the test |
@@ -125,7 +125,7 @@ examples/lte_test/run.sh -v --tmux     # under the libtmux_easy dashboard
 
 | Situation | What happens |
 |---|---|
-| `--tmux` from a normal terminal | a session `tlaunch-<launch>-<pid>`; tlaunch prints how to attach |
+| `--tmux` from a normal terminal | a session `lte-launch-<launch>-<pid>`; lte-launch prints how to attach |
 | `--tmux` inside tmux | windows `<launch>/<window>` in **your** session |
 | `--tmux-session NAME` | a new session of that name |
 | `--tmux-dash` | libtmux_easy's dashboard (`lte-dash`); the session is kept at the end |
@@ -144,4 +144,4 @@ examples/lte_test/run.sh -v --tmux     # under the libtmux_easy dashboard
 Values may use stock substitutions (`$(env HOME)`, `$(find-pkg-share pkg)`, ...) and
 `$(var NAME)`, which reads this launch's own arguments by dotted path. `launch_args:` is checked
 against the schema; node sections never are. Every run writes its effective config to
-`/tmp/tlaunch/<launch>-<pid>.yaml`, valid `--config` input.
+`/tmp/lte-launch/<launch>-<pid>.yaml`, valid `--config` input.

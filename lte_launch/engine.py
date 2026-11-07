@@ -33,7 +33,7 @@ from . import ros_config as rc
 from . import schema
 from .command import CommandError, join_namespace, with_prefix
 
-PROG = "tlaunch"
+PROG = "lte-launch"
 
 #: Every process gets these: output as it happens, not when a buffer fills.
 BASE_ENV = {"PYTHONUNBUFFERED": "1", "RCUTILS_LOGGING_BUFFERED_STREAM": "0"}
@@ -335,7 +335,7 @@ class Run:
         self.procs = procs
         self.label = label
         self.ros = ros if ros is not None else rc.RosConfig()
-        self.params_dir = params_dir or tempfile.mkdtemp(prefix="tlaunch-params-")
+        self.params_dir = params_dir or tempfile.mkdtemp(prefix="lte-launch-params-")
         self.log_levels = list(log_levels or [])
         self.log_commands = log_commands
         self.prefix = shlex.split(launch_prefix) if launch_prefix else []
@@ -627,7 +627,7 @@ class Run:
             context = Context()
             rclpy.init(args=[], context=context)
             self._graph = rclpy.create_node(
-                f"_tlaunch_{os.getpid()}", context=context
+                f"_lte_launch_{os.getpid()}", context=context
             )
             self._executor = SingleThreadedExecutor(context=context)
             self._executor.add_node(self._graph)
@@ -875,7 +875,7 @@ def current() -> Run:
     if _active is None:
         raise RuntimeError(
             "lte_launch's node(), include(), ... only work inside an "
-            "@launch body run by tlaunch (or a test's procs.build)"
+            "@launch body run by lte-launch (or a test's procs.build)"
         )
     return _active
 

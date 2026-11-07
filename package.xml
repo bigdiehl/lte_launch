@@ -5,7 +5,7 @@
   <version>0.1.0</version>
   <description>Typed, schema-driven launch files for ROS 2</description>
   <maintainer email="docdiehl@gmail.com">Spencer Diehl</maintainer>
-  <license>TODO: License declaration</license>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend>ament_cmake_python</build_depend>

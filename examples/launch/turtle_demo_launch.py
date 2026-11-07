@@ -13,7 +13,7 @@
 # are sibling modules of this file, both inside the lte_launch.examples
 # subpackage (installed from the top-level launch/ directory -- see CMakeLists.txt).
 # This file is itself imported as lte_launch.examples.turtle_demo_launch,
-# which is how `tlaunch lte_launch examples.turtle_demo_launch` loads it.
+# which is how `lte-launch lte_launch examples.turtle_demo_launch` loads it.
 # An include is a function call: the child's nodes start right there, in order.
 # For a launch in another package, or picked dynamically by name, use
 # `lte_launch.load_launch("pkg", "module")` instead -- it is the same

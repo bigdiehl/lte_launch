@@ -160,7 +160,7 @@ logic inside the loop. Errors surface mid-launch as "Caught exception in launch"
 are silent, such as typo'd arguments, a dead node with exit code 0, or an unmatched parameter
 section.
 
-tlaunch already removes the deferral. The config is resolved and validated first, then the
+lte-launch already removes the deferral. The config is resolved and validated first, then the
 launch body runs eagerly as plain Python with real values. `if` and `for` work, and a mistake
 raises a normal traceback at its line before anything has started. The only thing still
 deferred is starting the processes. The silent failures are fixed separately: unknown-key

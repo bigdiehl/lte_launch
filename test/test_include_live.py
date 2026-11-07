@@ -88,18 +88,18 @@ def test_stock_include(make_run, probe, uniq):
 @pytest.mark.live
 def test_stock_launch_includes_typed(spawn, probe, uniq):
     need_ros("turtlesim", "lte_launch")
-    pytest.importorskip("libtmux_easy.processes")  # tlaunch needs it
-    if not shutil.which("tlaunch"):
-        pytest.skip("tlaunch not on PATH (source the workspace's install/setup.bash)")
+    pytest.importorskip("libtmux_easy.processes")  # lte-launch needs it
+    if not shutil.which("lte-launch"):
+        pytest.skip("lte-launch not on PATH (source the workspace's install/setup.bash)")
     out = Reader(spawn(["ros2", "launch", "lte_launch", "stock_parent.launch.xml",
                         f"namespace:={uniq}"]))  # fmt: skip
     probe.wait_node(f"/{uniq}/turtlesim", 40)
-    out.wait_for(r"\[tlaunch\]: up: 1 process", 20)
+    out.wait_for(r"\[lte-launch\]: up: 1 process", 20)
     assert probe.param(f"/{uniq}/turtlesim", "background_r") == 200
     assert probe.param(f"/{uniq}/turtlesim", "background_b") == 90  # quiet.yaml
     assert f"/{uniq}/teleop" not in probe.nodes()  # quiet.yaml turns it off
     # SIGINT to ros2 launch alone (`kill -INT`): it passes one on to
-    # tlaunch. (To the whole group, tlaunch gets ours and then ros2 launch's,
+    # lte-launch. (To the whole group, lte-launch gets ours and then ros2 launch's,
     # which is a second Ctrl-C: it kills, and a SIGKILLed node lingers in the
     # graph until its DDS lease runs out.)
     os.kill(out.proc.pid, signal.SIGINT)

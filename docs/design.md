@@ -48,7 +48,7 @@ def turtle_bringup(config: BringupConfig):
 |---|---|---|
 | 1. Configure | `loader.resolve`, one flag per field, defaults < `--config` < flags, validation, `$(var)` in node sections | Nothing started. Exit 2 |
 | 2. Bring up | The body runs. Each `node()` checks the executable (ament index), writes a params file, starts | Teardown, exit 1; the error names the line |
-| 3. Up | `[INFO] [tlaunch]: up: N process(es) running[, M held elsewhere]` (a ready line for tests) | -- |
+| 3. Up | `[INFO] [lte-launch]: up: N process(es) running[, M held elsewhere]` (a ready line for tests) | -- |
 | 4. Supervise | Until Ctrl-C, `shutdown()`, a `required` process ending, a death, every process done, or a held container leaving the graph | Exit 1 |
 | 5. Teardown | The end sequence below | Summary of deaths |
 
@@ -64,7 +64,7 @@ error.
    SIGKILL 5 s later. In parallel. A second Ctrl-C kills everything and skips what is left.
 5. The engine's rclpy node is dropped.
 
-`tlaunch` runs it from `teardown()`; a test that used `start(procs)` gets the same sequence from
+`lte-launch` runs it from `teardown()`; a test that used `start(procs)` gets the same sequence from
 its own `procs.close()` (`bind_close`), so it leaves nothing loaded or running.
 
 ## Modules (`lte_launch/`)
@@ -83,7 +83,7 @@ its own `procs.close()` (`bind_close`), so it leaves nothing loaded or running.
 | `ros_config.py` | Node patterns, `ros__parameters`/`ros__remappings`, name checks |
 | `effective.py` | The effective config as a loadable YAML file with provenance |
 | `cli.py` | The command: parser, `configure`, `--show-config`, `--dry-run`, `run()` |
-| `stock.py` | A typed launch as a stock `LaunchDescription` (one `tlaunch` process) |
+| `stock.py` | A typed launch as a stock `LaunchDescription` (one `lte-launch` process) |
 
 ## Processes
 
@@ -178,7 +178,7 @@ A node's parameters and remaps, lowest first:
   empty result is an error. `--show-config` notes `from $(...)` on it.
 - Applies to `node()`, `container()` and `load()`; not to `process()` or a stock include.
 - Node sections reach a node only with a `name`; the namespace comes from `namespace()` scopes.
-- Every run writes the effective config to `/tmp/tlaunch/<launch>-<pid>.yaml`; `--show-config`
+- Every run writes the effective config to `/tmp/lte-launch/<launch>-<pid>.yaml`; `--show-config`
   dry-runs the body, so it shows which node each pattern matched. Scope values are code, not
   config, so it does not list them.
 
@@ -188,7 +188,7 @@ A node's parameters and remaps, lowest first:
 |---|---|
 | typed includes typed | Python import + `include(child, config or **fields)`: a function call |
 | typed includes stock | `include("pkg", "file.launch.py", **args)` or `include(path, **args)`: one `ros2 launch` process |
-| stock includes typed | Stub in `share/` (`lte_launch_install_stubs`); one launch argument per field, validated at include time; runs one `tlaunch` process (`stock.py`) |
+| stock includes typed | Stub in `share/` (`lte_launch_install_stubs`); one launch argument per field, validated at include time; runs one `lte-launch` process (`stock.py`) |
 
 A stock include's deaths: `ros2 launch` exits 0 whatever its processes did, so the engine reads
 its `process has died [pid P, exit code C` lines (a per-line hook through
@@ -205,8 +205,8 @@ its `process has died [pid P, exit code C` lines (a per-line hook through
 | Way | How |
 |---|---|
 | Unit and dry-run tests | `python3 -m pytest test -m "not live"`: under a second, no ROS needed |
-| Live tests | `@pytest.mark.live`: real processes, nodes, containers, tlaunch end to end; skip without ROS/tmux/libtmux_easy |
-| lte_launch_test | `examples/lte_test/`: tlaunch as one process, `procs.build(target.build)`, `target.start(procs)`, `target.panes()` |
+| Live tests | `@pytest.mark.live`: real processes, nodes, containers, lte-launch end to end; skip without ROS/tmux/libtmux_easy |
+| lte_launch_test | `examples/lte_test/`: lte-launch as one process, `procs.build(target.build)`, `target.start(procs)`, `target.panes()` |
 
 Live tests use unique names per test and wait on conditions, not sleeps (`test/_live.py`).
 

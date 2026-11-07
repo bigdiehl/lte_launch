@@ -104,7 +104,7 @@ jobs:
           name: test-logs
           path: |
             ws/log/
-            /tmp/tlaunch/
+            /tmp/lte-launch/
 
   deb:
     needs: libtmux-easy
@@ -141,8 +141,8 @@ jobs:
         run: |
           apt-get install -y ./out/ros-jazzy-lte-launch_*.deb
           source /opt/ros/jazzy/setup.bash
-          tlaunch --help > /dev/null
-          tlaunch lte_launch turtle_demo_launch.py --dry-run
+          lte-launch --help > /dev/null
+          lte-launch lte_launch turtle_demo_launch.py --dry-run
       - uses: actions/upload-artifact@v4
         with:
           name: ros-jazzy-lte-launch

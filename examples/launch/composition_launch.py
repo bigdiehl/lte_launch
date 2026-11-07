@@ -1,11 +1,11 @@
 # composition_launch.py -- composable nodes, and where they run: one config field.
 # A failed load stops the run at its line.
 #
-#   tlaunch lte_launch composition_launch.py                    # our container "box"
-#   tlaunch lte_launch composition_launch.py --container ""     # each in its own
-#   tlaunch lte_launch composition_launch.py --container /robot/box   # one running
-#   tlaunch lte_launch composition_launch.py --dry-run          # loads as commands
-#   tlaunch lte_launch composition_launch.py --plugin composition::Nope
+#   lte-launch lte_launch composition_launch.py                    # our container "box"
+#   lte-launch lte_launch composition_launch.py --container ""     # each in its own
+#   lte-launch lte_launch composition_launch.py --container /robot/box   # one running
+#   lte-launch lte_launch composition_launch.py --dry-run          # loads as commands
+#   lte-launch lte_launch composition_launch.py --plugin composition::Nope
 
 from pydantic import BaseModel, Field
 

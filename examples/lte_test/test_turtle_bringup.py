@@ -8,29 +8,29 @@ from lte_launch_test import Processes, RosProbe
 
 from lte_launch.examples.turtle_bringup_launch import turtle_bringup
 
-# How each may end when stopped: turtlesim and tlaunch exit 0 on SIGINT,
+# How each may end when stopped: turtlesim and lte-launch exit 0 on SIGINT,
 # `ros2 topic pub` exits 2.
 STOP = {"*": (0, 130), "m1:driver": (0, 2), "m2:driver": (0, 2), "m4:driver": (0, 2)}
 
 
 class TestAsProcess:
-    """Method 3: tlaunch is one process; its ready line gates the test."""
+    """Method 3: lte-launch is one process; its ready line gates the test."""
 
     @classmethod
     def setup_class(cls):
         cls.procs = Processes(cls, fail_on={"*": r"Traceback"}, stop_codes=STOP)
         cls.probe = RosProbe(log_dir=cls.procs.log_dir)
         cls.procs.start(
-            "sys:tlaunch",
-            "tlaunch lte_launch turtle_bringup_launch.py --namespace m3"
+            "sys:lte-launch",
+            "lte-launch lte_launch turtle_bringup_launch.py --namespace m3"
             " --turtlesim.background_r 33",
-            ready=r"\[tlaunch\]: up",
+            ready=r"\[lte-launch\]: up",
         )
 
     @classmethod
     def teardown_class(cls):
         cls.probe.destroy()
-        cls.procs.close()  # tlaunch must exit 0 on SIGINT
+        cls.procs.close()  # lte-launch must exit 0 on SIGINT
 
     def test_typed_param_reached_the_node(self):
         assert self.probe.get_param("/m3/turtlesim", "background_r") == 33

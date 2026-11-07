@@ -8,7 +8,7 @@ from . import ros_config as rc
 
 
 class TypedTarget:
-    """What ``tlaunch`` can run: a function plus the config model it takes."""
+    """What ``lte-launch`` can run: a function plus the config model it takes."""
 
     def __init__(self, config_type: type, factory: Callable):
         self.config_type = config_type
@@ -21,7 +21,7 @@ class TypedTarget:
     def main(self, argv: list[str] | None = None):
         """Run this target as a program -- ``python3 my_file.py [options]``.
 
-        The same command line as ``tlaunch <package> <file>``; exits when done,
+        The same command line as ``lte-launch <package> <file>``; exits when done,
         so it is only useful under ``if __name__ == "__main__":``.
         """
         from .cli import main as cli_main
@@ -32,9 +32,9 @@ class TypedTarget:
 class TypedLaunch(TypedTarget):
     """A launch whose body starts processes as it runs (``engine.py``).
 
-    Besides ``tlaunch``, lte_launch_test runs it three ways:
+    Besides ``lte-launch``, lte_launch_test runs it three ways:
 
-    * as one process: ``procs.start("sys:up", "tlaunch pkg f_launch.py", ready=r"\\[tlaunch\\]: up")``
+    * as one process: ``procs.start("sys:up", "lte-launch pkg f_launch.py", ready=r"\\[lte-launch\\]: up")``
     * ``procs.build(target.build, **fields)`` or ``target.start(procs, **fields)``:
       every process of the body is a process of the test's group
     * ``for name, cmd in target.panes(**fields): procs.start(name, cmd)``
@@ -104,7 +104,7 @@ def launch(factory: Callable | None = None, *, config: type | None = None):
     generated model, for a parent to embed) and the body gets them by name.
 
     Also exports ``generate_launch_description`` from the module (unless it has
-    one), which is how ``tlaunch`` finds the launch, and which lets a stock
+    one), which is how ``lte-launch`` finds the launch, and which lets a stock
     launch file include it (``stock.py``).
     """
 

@@ -36,7 +36,7 @@ class Knight(InputDict):
   mutable per-instance state) is heavier than our layering needs, since ours is a pure
   function of (defaults, files, CLI).
 
-## Pros and cons as a tlaunch dependency
+## Pros and cons as a lte-launch dependency
 
 **In favor:** schema-as-interface already built and in production use; Pydantic is only its
 *coercion backend* (real evidence a layered design works — see the proposal below); explicit
@@ -71,7 +71,7 @@ per-field CLI hints, repeated-flag-for-records + fixed-`nargs`-for-vectors.
 
 ## Proposal: a small pluggable schema interface (deferred, not built)
 
-tlaunch's own code would see only a normalized description, never a backend directly:
+lte-launch's own code would see only a normalized description, never a backend directly:
 
 ```python
 @dataclass
@@ -92,9 +92,9 @@ class SchemaBackend(Protocol):
 ```
 
 `@launch(config=Model)` would accept any class some registered backend `handles`. This is what
-would make "system Pydantic vs pip Pydantic" a non-issue for tlaunch itself: it adapts to
+would make "system Pydantic vs pip Pydantic" a non-issue for lte-launch itself: it adapts to
 whatever the launch author's model classes are (a v1 backend, a v2 backend, later an `InputDict`
-backend), rather than tlaunch depending on one version. Cost: a few dozen lines per backend and
+backend), rather than lte-launch depending on one version. Cost: a few dozen lines per backend and
 a test matrix; the current walker already has ~90% of the logic (`schema.py` is already the
 single Pydantic-aware module by design, precisely so this stays cheap to add later).
 
@@ -111,7 +111,7 @@ parameter, with a clear error for `"22 kg"` given a length field. Also removes a
 bug class (mm vs m).
 
 **Integration paths, cheapest first:** (A) nothing now, plain floats, units documented in
-`description` — what's built today. (B) **tlaunch-native**: an `Annotated[float, Unit("m")]`
+`description` — what's built today. (B) **lte-launch-native**: an `Annotated[float, Unit("m")]`
 marker in our own schema layer, parsing `"22 cm"`-style strings via a small dependency
 (`pint`, apt-installable) or a built-in unit table. (C) reuse darts' `dunits` unit *types*
 only, via `python3-darts-core` if installed. (D) adopt `InputDict` as a full backend (heaviest;

@@ -1,7 +1,7 @@
-"""tlaunch: run a typed launch file with a schema-generated command line.
+"""lte-launch: run a typed launch file with a schema-generated command line.
 
-    tlaunch <package> <file> [options] [launch arguments]
-    tlaunch <path/to/standalone_launch.py> [options] [launch arguments]
+    lte-launch <package> <file> [options] [launch arguments]
+    lte-launch <path/to/standalone_launch.py> [options] [launch arguments]
 
 ``<file>`` is the full filename, e.g. ``turtle_demo_launch.py`` (``.py`` required);
 it is found by searching the installed package for a ``*_launch.py`` file with
@@ -35,14 +35,14 @@ from . import schema
 from .command import check_levels
 from .core import TypedTarget
 
-PROG = "tlaunch"
+PROG = "lte-launch"
 WARN = f"{PROG}: warning:"
 USAGE = (
-    f"{PROG} [tlaunch options] <package> <file> [arguments]\n"
-    f"       {PROG} [tlaunch options] <path/to/standalone_launch.py> [arguments]"
+    f"{PROG} [lte-launch options] <package> <file> [arguments]\n"
+    f"       {PROG} [lte-launch options] <path/to/standalone_launch.py> [arguments]"
 )
 
-# tlaunch's own options; schema fields must not collide with these. Every option
+# lte-launch's own options; schema fields must not collide with these. Every option
 # added from here on is hyphenated, which a Python identifier cannot be, so it
 # can never collide with a schema field (Q18).
 OWN_WITH_VALUE = {
@@ -85,7 +85,7 @@ def split_target(argv: list[str]) -> tuple[list[str], list[str]]:
     """Separate the launch target from the remaining options.
 
     The target is one existing file path, or ``<package> <file>``, and
-    must come before the first schema flag (tlaunch's own options may appear
+    must come before the first schema flag (lte-launch's own options may appear
     anywhere before or between them).
     """
     positionals: list[int] = []
@@ -216,7 +216,7 @@ def add_schema_args(parser: argparse.ArgumentParser, model: type):
         if flag in RESERVED:
             raise TlaunchError(
                 f"field '{spec.dotted}' of {spec.owner.__name__} collides with "
-                f"tlaunch's own option {flag}; rename the field"
+                f"lte-launch's own option {flag}; rename the field"
             )
         if not spec.supported:
             skipped.append(spec)
@@ -277,8 +277,8 @@ def add_schema_args(parser: argparse.ArgumentParser, model: type):
 
 
 def add_own_args(parser: argparse.ArgumentParser):
-    """tlaunch's own options, in three groups, after the launch's arguments."""
-    g = parser.add_argument_group("tlaunch: config")
+    """lte-launch's own options, in three groups, after the launch's arguments."""
+    g = parser.add_argument_group("lte-launch: config")
     g.add_argument(
         "--config",
         action="append",
@@ -325,7 +325,7 @@ def add_own_args(parser: argparse.ArgumentParser):
         "become errors",
     )
 
-    g = parser.add_argument_group("tlaunch: running")
+    g = parser.add_argument_group("lte-launch: running")
     g.add_argument(
         "--log-level",
         action="append",
@@ -376,7 +376,7 @@ def add_own_args(parser: argparse.ArgumentParser):
         help="start nothing; print each process's command line",
     )
 
-    g = parser.add_argument_group("tlaunch: tmux")
+    g = parser.add_argument_group("lte-launch: tmux")
     g.add_argument(
         "--tmux",
         action="store_true",
@@ -548,7 +548,7 @@ def save_effective(text: str, label: str) -> str:
     import tempfile
 
     name = re.sub(r"\W+", "_", label).strip("_") or "launch"
-    directory = Path(tempfile.gettempdir()) / "tlaunch"
+    directory = Path(tempfile.gettempdir()) / "lte-launch"
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{name}-{os.getpid()}.yaml"
     path.write_text(text)
@@ -611,7 +611,7 @@ def run(
     from . import engine
 
     stem = run_label(target)
-    log_dir = os.path.join(tempfile.gettempdir(), "tlaunch", f"{stem}-{os.getpid()}")
+    log_dir = os.path.join(tempfile.gettempdir(), "lte-launch", f"{stem}-{os.getpid()}")
     procs = session = None
     join = False
     if not own["dry_run"]:
@@ -619,7 +619,7 @@ def run(
             from libtmux_easy.processes import Processes
         except ImportError as exc:
             raise TlaunchError(
-                f"tlaunch needs libtmux_easy ({exc}): install its .deb, or "
+                f"lte-launch needs libtmux_easy ({exc}): install its .deb, or "
                 "PYTHONPATH=~/projects/libtmux_easy/src"
             ) from None
         # The processes' output is echoed to our stdout as it comes: line by
@@ -629,7 +629,7 @@ def run(
         prefix = ""
         if any(own[flag] for flag in TMUX_FLAGS):
             join = bool(os.environ.get("TMUX")) and not own["tmux_session"]
-            name = own["tmux_session"] or f"tlaunch-{stem}-{os.getpid()}"
+            name = own["tmux_session"] or f"lte-launch-{stem}-{os.getpid()}"
             session = engine.open_tmux(name, own["tmux_dash"], join=join)
             prefix = stem if join else ""
         procs = Processes(
@@ -772,7 +772,7 @@ def _main(argv: list[str], typed: TypedTarget | None = None) -> int:
 
 
 def main(argv: list[str] | None = None, *, target: TypedTarget | None = None) -> int:
-    """``tlaunch``'s entry point. ``target`` short-circuits target resolution, for
+    """``lte-launch``'s entry point. ``target`` short-circuits target resolution, for
     a file run directly with ``python3`` (see ``TypedTarget.main``)."""
     try:
         import argcomplete
