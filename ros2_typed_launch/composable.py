@@ -95,9 +95,11 @@ class Component:
             engine.log(f"unloaded {self.name} from {box.fqn}")
 
 
-class Container:
+class Container(engine.ProcHandle):
     """A component container and ``load()``: ours (``proc``), or one started
     elsewhere (``proc`` None)."""
+
+    kind = "container"
 
     def __init__(self, run: engine.Run, fqn: str, proc: Proc | None = None):
         self.run = run
@@ -105,24 +107,6 @@ class Container:
         self.proc = proc
         self.components: list[Component] = []
         self._client = None
-
-    @property
-    def external(self) -> bool:
-        return self.proc is None
-
-    @property
-    def window(self) -> str:
-        if self.proc is not None:
-            return self.proc.window
-        return self.run.window_for(self.run.namespace)
-
-    def __getattr__(self, attr):  # the process handle's: pid, stop, wait_for, ...
-        proc = self.__dict__.get("proc")
-        if proc is None:
-            raise AttributeError(
-                f"{attr}: container {self.__dict__.get('fqn')} was started elsewhere"
-            )
-        return getattr(proc, attr)
 
     def lost(self) -> str | None:
         """Why it is gone (None: still in the graph)."""
@@ -252,10 +236,8 @@ def container_at(name: str, *, timeout: float | None = 30.0) -> Container:
     if not run.dry:
         client = box._load_client()
         try:
-            run.wait(
-                lambda: True if client.service_is_ready() else None,
-                timeout,
-                f"container {full} (its {client.srv_name} service)",
+            run.wait_for_service(
+                client, timeout, f"container {full} (its {client.srv_name} service)"
             )
         except engine.WaitTimeout:
             del run.containers[full]

@@ -53,6 +53,7 @@ OWN_WITH_VALUE = {
     "--ros-remap",
     "--tmux-session",
     "--log-level",
+    "--stop-timeout",
 }
 OWN_FLAGS = {
     "-h",
@@ -360,6 +361,15 @@ def add_own_args(parser: argparse.ArgumentParser):
         help="only apply --launch-prefix to executables matching REGEX",
     )
     g.add_argument(
+        "--stop-timeout",
+        type=float,
+        default=10.0,
+        metavar="S",
+        dest="$stop_timeout",
+        help="seconds each process gets after SIGINT before SIGTERM, when "
+        "stopping (default 10; a node's stop_timeout= overrides it)",
+    )
+    g.add_argument(
         "--dry-run",
         action="store_true",
         dest="$dry_run",
@@ -612,6 +622,10 @@ def run(
                 f"tlaunch needs libtmux_easy ({exc}): install its .deb, or "
                 "PYTHONPATH=~/projects/libtmux_easy/src"
             ) from None
+        # The processes' output is echoed to our stdout as it comes: line by
+        # line, even into a pipe (`| tee`, a stock `ros2 launch` include).
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(line_buffering=True)
         prefix = ""
         if any(own[flag] for flag in TMUX_FLAGS):
             join = bool(os.environ.get("TMUX")) and not own["tmux_session"]
@@ -620,6 +634,7 @@ def run(
             prefix = stem if join else ""
         procs = Processes(
             stem, tmux=session, prefix=prefix, log_dir=log_dir, echo=["*"],
+            sigint_timeout=own["stop_timeout"],
         )  # fmt: skip
 
     run = engine.Run(

@@ -17,6 +17,7 @@ so Ctrl-C is a plain ``KeyboardInterrupt`` wherever the body happens to be.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import os
 import re
 import shlex
@@ -54,6 +55,39 @@ class Shutdown(Exception):
     """``shutdown()`` from the body: stop everything, cleanly."""
 
 
+class Reason(str):
+    """Why a run ended, as ``on_shutdown`` callbacks get it: the text, and
+    ``kind``: interrupted, shutdown, died, failed or finished."""
+
+    kind: str
+
+    def __new__(cls, kind: str, text: str | None = None) -> "Reason":
+        self = super().__new__(cls, text or kind)
+        self.kind = kind
+        return self
+
+
+def reason_for(exc: BaseException | None, run: "Run") -> Reason:
+    """The Reason a run ends with ``exc`` (None: every process finished)."""
+    if exc is None:
+        return Reason("finished", "every process has finished")
+    if isinstance(exc, KeyboardInterrupt):
+        return Reason("interrupted")
+    if isinstance(exc, Shutdown):
+        return Reason("shutdown", str(exc))
+    if run.deaths:
+        return Reason("died", ", ".join(p.who for p in run.deaths) + " died")
+    return Reason("failed", str(exc) or type(exc).__name__)
+
+
+def _takes_reason(fn: Callable) -> bool:
+    try:
+        inspect.signature(fn).bind(None)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 def log(message: str, level: str = "INFO") -> None:
     print(f"[{level}] [{PROG}]: {message}", flush=True)
 
@@ -75,6 +109,34 @@ def why(code: int | None) -> str:
         except ValueError:
             return f"killed by signal {-code}"
     return f"exit code {code}"
+
+
+# --------------------------------------------------------------------------
+# a stock include's processes: what 'ros2 launch' prints about them
+# --------------------------------------------------------------------------
+#: 'ros2 launch' reports the end of a process it started, then keeps running
+#: (and exits 0 at the end whatever happened). As lte_launch_test's
+#: ``launch_death``, plus the clean end.
+STOCK_DIED = re.compile(
+    r"\[ERROR\] \[(?P<name>[^\]\s]+)\]: process has died "
+    r"\[pid (?P<pid>\d+), exit code (?P<code>-?\d+)"
+)
+STOCK_FINISHED = re.compile(
+    r"\[INFO\] \[(?P<name>[^\]\s]+)\]: process has finished cleanly "
+    r"\[pid (?P<pid>\d+)\]"
+)
+
+
+def stock_ended(line: str) -> tuple[str, int, int] | None:
+    """A 'ros2 launch' line about a process that ended -> (its name as stock
+    names it, e.g. ``talker-1``; pid; exit code, -N for signal N), or None."""
+    m = STOCK_DIED.search(line)
+    if m:
+        return m["name"], int(m["pid"]), int(m["code"])
+    m = STOCK_FINISHED.search(line)
+    if m:
+        return m["name"], int(m["pid"]), 0
+    return None
 
 
 def _codes(exits) -> tuple | None:
@@ -109,8 +171,9 @@ class Proc:
     respawn: float | None = None  # seconds before a respawn; None: no respawn
     respawn_max: int = -1
     required: bool = False
+    stop_timeout: float | None = None  # SIGINT's grace; None: the group's
     respawns: int = 0
-    pending: bool = False  # a respawn is scheduled
+    pending: bool = False  # respawning: until the new run's exit is handled
     stopping: bool = False
     changed: threading.Event = field(default_factory=threading.Event)
 
@@ -190,6 +253,63 @@ class Proc:
         return self
 
 
+class ProcHandle:
+    """A handle on something that may be one of our processes (``proc``) or
+    started elsewhere (``proc`` None): the process handle's attributes (pid,
+    stop, wait_for, ...) pass through."""
+
+    kind = "node"  # for messages
+    run: "Run"
+    proc: Proc | None
+    fqn: str
+
+    @property
+    def external(self) -> bool:
+        return self.proc is None
+
+    @property
+    def window(self) -> str:
+        """Its process's window, else the current scope's (a dry run's label)."""
+        if self.proc is not None:
+            return self.proc.window
+        return self.run.window_for(self.run.namespace)
+
+    def __getattr__(self, attr):
+        proc = self.__dict__.get("proc")
+        if proc is None:
+            raise AttributeError(
+                f"{attr}: {self.kind} {self.__dict__.get('fqn')} was started elsewhere"
+            )
+        return getattr(proc, attr)
+
+
+@dataclass
+class InnerDeath:
+    """A process a stock include started that died: in ``run.deaths`` beside
+    our own ``Proc``s, with the same ``who``/``returncode``/``output()``."""
+
+    parent: Proc  # the include's ``ros2 launch``
+    name: str  # stock's name for it: ``talker-1``
+    pid: int
+    returncode: int
+
+    @property
+    def who(self) -> str:
+        return f"{self.name} in {self.parent.who}"
+
+    def output(self) -> str:
+        """Its lines of the include's output (stock prefixes them ``[name]``)."""
+        tag = f"[{self.name}] "
+        return "\n".join(
+            line for line in self.parent.output().splitlines() if line.startswith(tag)
+        )
+
+
+def _base(name: str) -> str:
+    """``talker-1`` -> ``talker``: stock's name without its counter."""
+    return re.sub(r"-\d+$", "", name)
+
+
 # --------------------------------------------------------------------------
 # a run
 # --------------------------------------------------------------------------
@@ -222,18 +342,28 @@ class Run:
         self.prefix_filter = launch_prefix_filter
         self.started: list[Proc] = []
         self.plan: list[Planned] = []
-        self.deaths: list[Proc] = []
+        self.deaths: list[Proc | InnerDeath] = []
         self.closing = False
         self.shutdown_requested: str | None = None
+        #: ``on_shutdown`` callbacks: (fn, timeout), called last first
+        self.callbacks: list[tuple[Callable, float | None]] = []
+        self.callback_failed = False
+        self._ending = False  # the callbacks are running
+        self._cut_all = False  # a second Ctrl-C: every callback thread
+        self._cut: set[int] = set()  # threads of callbacks we stopped waiting for
         #: things outside our processes this run keeps alive until teardown
         #: (components in another's container): ``.lost()``, ``.release()``
         self.held: list = []
         #: containers by full name (``composable``)
         self.containers: dict = {}
+        #: lifecycle nodes (``lifecycle``): sent ``shutdown`` at teardown
+        self.lifecycle: list = []
         self._wake = threading.Event()
         self._namespaces: list[str] = ["/"]
         self._windows: list[str | None] = [None]
         self._envs: list[dict] = [{}]
+        #: ``ros_params()``/``ros_remaps()`` scopes: (parameters, remappings)
+        self._ros: list[tuple[dict, dict]] = [({}, {})]
         self._graph = None
         self._executor = None
         self._chained = None
@@ -259,6 +389,16 @@ class Run:
     @property
     def env(self) -> dict:
         return self._envs[-1]
+
+    @property
+    def scope_params(self) -> dict:
+        """ROS parameters every node started here gets (under its own)."""
+        return self._ros[-1][0]
+
+    @property
+    def scope_remaps(self) -> dict:
+        """Remappings every node started here gets (under its own)."""
+        return self._ros[-1][1]
 
     def window_for(self, namespace: str) -> str:
         explicit = self._windows[-1]
@@ -289,6 +429,18 @@ class Run:
         finally:
             self._envs.pop()
 
+    @contextlib.contextmanager
+    def in_ros(self, params: dict | None = None, remaps: dict | None = None):
+        """Nested scopes merge; the inner one wins."""
+        outer_params, outer_remaps = self._ros[-1]
+        self._ros.append(
+            ({**outer_params, **(params or {})}, {**outer_remaps, **(remaps or {})})
+        )
+        try:
+            yield
+        finally:
+            self._ros.pop()
+
     # ----------------------------------------------------------- starting
     def start(
         self,
@@ -303,33 +455,49 @@ class Run:
         respawn: float | bool | None = None,
         respawn_max: int = -1,
         required: bool = False,
+        prefix: str | list[str] | None = None,
+        on_line: Callable[[Proc, str], None] | None = None,
+        stop_timeout: float | None = None,
     ) -> Proc:
-        """Start ``cmd`` (an argv, or a shell command line) as ``window:name``."""
+        """Start ``cmd`` (an argv, or a shell command line) as ``window:name``.
+
+        ``prefix``: put before the command (``"gdb -ex run --args"``) instead
+        of the run's ``--launch-prefix``, whatever its filter (``""``: none).
+        ``on_line(proc, line)``: each line it prints, from a reader thread.
+        ``stop_timeout``: seconds SIGINT gets before SIGTERM when stopped.
+        """
         self.check()
         window = window or self.window_for(self.namespace)
         argv = None
-        if isinstance(cmd, str):
-            command = cmd
+        words = shlex.split(prefix) if isinstance(prefix, str) else prefix
+        if isinstance(cmd, str):  # the run's prefix never applies to a shell line
+            command = f"{shlex.join(words)} {cmd}" if words else cmd
         else:
-            argv = with_prefix(list(cmd), self.prefix, self.prefix_filter)
+            if words is None:
+                argv = with_prefix(list(cmd), self.prefix, self.prefix_filter)
+            else:
+                argv = [*words, *cmd]
             command = shlex.join(argv)
         if cwd:
             command = f"cd {shlex.quote(cwd)} && {command}"
         respawn = 0.0 if respawn is True else (respawn or None)
         proc = Proc(
             self, name, window, command, argv, fqn, _codes(exits), respawn,
-            respawn_max, required,
+            respawn_max, required, stop_timeout,
         )  # fmt: skip
         if self.log_commands:
             log(f"{proc.key}: {command}")
         if self.dry:
             self.plan.append(Planned(proc.key, command, argv))
         else:
+            hook = () if on_line is None else [lambda line: on_line(proc, line)]
             self.procs.start(
                 proc.key,
                 command,
                 exits=proc.exits,
                 env={**BASE_ENV, **self.env, **(env or {})},
+                fail_on=hook,  # returns None: never a fail_on hit itself
+                sigint_timeout=stop_timeout,
             )
         self.started.append(proc)
         return proc
@@ -345,8 +513,11 @@ class Run:
             self._chained(key, status, died)
         proc = self._find(key)
         if proc is None or proc.stopping or self.closing:
+            if proc is not None:
+                proc.pending = False
             return
         code = code_of(status)
+        respawns = proc.respawns
         if proc.respawn is not None and (
             proc.respawn_max < 0 or proc.respawns < proc.respawn_max
         ):
@@ -355,26 +526,62 @@ class Run:
             log(f"{proc.who} ended ({why(code)}); respawning in {proc.respawn:g} s", "WARN")
             threading.Timer(proc.respawn, self._respawn, args=(proc,)).start()
         elif died:
-            self.deaths.append(proc)
-            log(f"{proc.who} died unexpectedly: {why(code)}", "ERROR")
-            for line in proc.output().splitlines()[-5:]:
-                print(f"    | {line}", flush=True)
+            self._died(proc, code)
         else:
             log(f"{proc.key} finished ({why(code)})")
         if proc.required and not died and self.shutdown_requested is None:
             self.shutdown_requested = f"{proc.key} (required) ended"
+        if proc.respawns == respawns:  # no new respawn scheduled: settled
+            proc.pending = False
         self._wake.set()
 
+    def stock_watch(self, exits=(0,), allow=()) -> Callable[[Proc, str], None]:
+        """An ``on_line`` for a stock include: a process its ``ros2 launch``
+        reports ended with a code not in ``exits`` (None: any end) is a death
+        of this run, unless its name (``talker`` or ``talker-1``) is in
+        ``allow``."""
+        exits, allow = _codes(exits), set(allow)
+
+        def on_line(proc: Proc, line: str) -> None:  # a reader thread
+            ended = stock_ended(line)
+            if ended is None or proc.stopping or self.closing:
+                return
+            name, pid, code = ended
+            if (exits is not None and code in exits) or {name, _base(name)} & allow:
+                return
+            self._died(InnerDeath(proc, name, pid, code), code)
+            self._wake.set()
+
+        return on_line
+
+    def _died(self, who: "Proc | InnerDeath", code: int | None) -> None:
+        """Record a death and report it with its last lines."""
+        self.deaths.append(who)
+        log(f"{who.who} died unexpectedly: {why(code)}", "ERROR")
+        for line in who.output().splitlines()[-5:]:
+            print(f"    | {line}", flush=True)
+
     def _respawn(self, proc: Proc) -> None:
-        proc.pending = False
+        # Still pending once started: _exited() settles it when this run ends.
+        # (Cleared here, supervise() could see nothing running and nothing
+        # pending before the new run is up, and end the run.)
+        started = False
         if not (self.closing or proc.stopping):
             with contextlib.suppress(Exception):
                 self.procs[proc.key].start()
+                started = True
+        if not started:
+            proc.pending = False
+        self._wake.set()
 
     # ------------------------------------------------------------ waiting
     def check(self) -> None:
         """Raise if anything died or a shutdown was asked for: every wait calls
-        this."""
+        this. Not in an on_shutdown callback: the run is ending anyway."""
+        if self._is_cut():
+            raise WaitTimeout("on_shutdown callback cut short")
+        if self._ending:
+            return
         if self.deaths:
             raise ProcessDied(
                 "bringup stopped: " + ", ".join(p.who for p in self.deaths) + " died"
@@ -426,20 +633,29 @@ class Run:
             self._executor.add_node(self._graph)
         return self._graph
 
+    def spin(self, seconds: float = 0.05) -> None:
+        """Handle what our rclpy node has waiting (service answers)."""
+        self._executor.spin_once(timeout_sec=seconds)
+
+    def wait_for_service(
+        self, client, timeout: float | None, what: str | None = None, check: bool = True
+    ) -> None:
+        self.wait(
+            lambda: True if client.service_is_ready() else None,
+            timeout,
+            what or f"service {client.srv_name}",
+            check,
+        )
+
     def call(
         self, client, request, timeout: float | None, what: str, check: bool = True
     ):
         """A service call that fails on any death meanwhile; -> the response."""
-        self.wait(
-            lambda: True if client.service_is_ready() else None,
-            timeout,
-            f"service {client.srv_name}",
-            check,
-        )
+        self.wait_for_service(client, timeout, check=check)
         future = client.call_async(request)
 
         def done():
-            self._executor.spin_once(timeout_sec=0.05)
+            self.spin()
             return future.result() if future.done() else None
 
         return self.wait(done, timeout, what, check)
@@ -480,6 +696,9 @@ class Run:
             if not (
                 any(p.running for p in self.started) or self._respawning() or self.held
             ):
+                if self._wake.wait(0.3):  # a reader may still be on its last lines
+                    self._wake.clear()
+                    continue
                 log("every process has finished")
                 return
             if self.held and time.monotonic() - last > 2.0:
@@ -502,17 +721,131 @@ class Run:
     def _respawning(self) -> bool:
         return any(p.pending for p in self.started)
 
-    def teardown(self) -> None:
-        """Stop everything still running, all at once."""
+    def on_shutdown(self, fn: Callable, timeout: float | None = 10.0) -> None:
+        self.callbacks.append((fn, timeout))
+
+    def call_on_shutdown(self, reason: str = "ended") -> bool:
+        """The ``on_shutdown`` callbacks, last registered first, while every
+        process still runs. Each gets ``timeout`` s; an error is logged and
+        the rest still run; a second Ctrl-C skips the rest. Not in a dry run.
+        -> False if one failed."""
+        if self.dry or not self.callbacks:
+            return True
+        if not isinstance(reason, Reason):
+            reason = Reason("shutdown", reason)
+        self.closing = True  # an exit from here on is no death, no respawn
+        ok = True
+        try:
+            self._ending = True
+            with active(self):
+                while self.callbacks:
+                    fn, timeout = self.callbacks.pop()
+                    ok = self._call(fn, timeout, reason) and ok
+        except KeyboardInterrupt:
+            self._cut_all = True
+            log(f"on_shutdown: {len(self.callbacks) + 1} callback(s) cut short", "WARN")
+            self.callbacks.clear()
+        finally:
+            self._ending = False
+        self.callback_failed = self.callback_failed or not ok
+        return ok
+
+    def _call(self, fn: Callable, timeout: float | None, reason: Reason) -> bool:
+        """One callback, on a thread of its own so that it can time out."""
+        name = getattr(fn, "__name__", None) or repr(fn)
+        args = (reason,) if _takes_reason(fn) else ()
+        errors: list[BaseException] = []
+
+        def call():
+            try:
+                fn(*args)
+            except Shutdown:
+                pass
+            except BaseException as exc:  # noqa: BLE001 -- reported below
+                if not self._is_cut():
+                    errors.append(exc)
+            finally:
+                self._cut.discard(threading.get_ident())  # idents are reused
+
+        log(f"on_shutdown: {name} ({reason})")
+        thread = threading.Thread(target=call, name=f"on_shutdown {name}", daemon=True)
+        thread.start()
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while thread.is_alive():
+            if deadline is not None and time.monotonic() > deadline:
+                self._cut.add(thread.ident)  # its next wait raises; left to end
+                log(f"on_shutdown: {name} still running after {timeout:g} s", "ERROR")
+                return False
+            thread.join(0.05)
+        for exc in errors:
+            log(f"on_shutdown: {name} failed: {exc}", "ERROR")
+            if not isinstance(exc, LaunchError):
+                traceback.print_exception(exc)
+        return not errors
+
+    def _is_cut(self) -> bool:
+        """This is a callback's thread we stopped waiting for."""
+        if threading.current_thread() is threading.main_thread():
+            return False
+        return self._cut_all or threading.get_ident() in self._cut
+
+    def teardown(self, reason: str | None = None) -> None:
+        """Stop everything still running, all at once (each process on its
+        own ``stop_timeout``); see ``_end``."""
+        procs = self.procs
+        self._end(
+            reason if reason is not None else reason_for(None, self),
+            lambda: procs is not None and procs.close(check=False),
+        )
+
+    def _end(self, reason: Reason, stop: Callable[[], Any]) -> None:
+        """The end of a run, in order: ``on_shutdown`` callbacks (every
+        process still up), lifecycle ``shutdown``, unload held components
+        (an external container may be one of ours, so before the stop),
+        ``stop()``, drop our rclpy node."""
+        self.call_on_shutdown(reason)
         self.closing = True
+        try:
+            self._release()
+        finally:
+            try:
+                stop()
+            finally:
+                self.close_graph()
+
+    def _release(self) -> None:
+        """Lifecycle nodes to ``finalized``, then unload what we hold outside
+        our processes (components in a container started elsewhere)."""
+        if self.lifecycle:
+            from .lifecycle import finalize_all
+
+            finalize_all(self)
         for item in reversed(self.held):
             try:
                 item.release()
             except Exception as exc:  # the container may be gone already
                 log(f"{exc}", "WARN")
         self.held.clear()
-        if self.procs is not None:
-            self.procs.close(check=False)
+
+    def bind_close(self) -> None:
+        """After ``detach()``: the group's ``close()`` ends this run as
+        ``teardown()`` does (``_end``), with the group's own close as the stop.
+        """
+        procs = self.procs
+        if procs is None:
+            return
+        group_close = procs.close
+
+        def close(*args, **kwargs):
+            self._end(
+                Reason("finished", "the test's group closed"),
+                lambda: group_close(*args, **kwargs),
+            )
+
+        procs.close = close  # also what an aborted test's group calls
+
+    def close_graph(self) -> None:
+        """Drop our rclpy node, if it was made."""
         if self._graph is not None:
             context = self._graph.context
             self._executor.shutdown()
@@ -550,7 +883,13 @@ def current() -> Run:
 def make_config(model: type, config: Any = None, fields: dict | None = None):
     if config is not None:
         return config
-    return schema.validate(model, fields or {})
+    try:
+        return schema.validate(model, fields or {})
+    except schema.SchemaError as exc:  # an include()'s fields: name each one
+        issues = "; ".join(
+            f"{'.'.join(i.path) or '(config)'}: {i.message}" for i in exc.issues
+        )
+        raise LaunchError(f"{model.__name__}: {issues}") from None
 
 
 # --------------------------------------------------------------------------
@@ -591,6 +930,7 @@ def close_tmux(session, keep: bool, joined: bool = False) -> str | None:
 def execute(typed, config, run: Run, attach_hint: str | None = None) -> int:
     """Run a body to the end: bring up, supervise, tear down. -> exit code."""
     failed = interrupted = False
+    reason = None
 
     def terminate(signum, frame):
         raise KeyboardInterrupt
@@ -599,6 +939,8 @@ def execute(typed, config, run: Run, attach_hint: str | None = None) -> int:
         log("second interrupt: killing everything", "WARN")
         if run.procs is not None:
             run.procs.kill_all()
+        if run._ending:
+            raise KeyboardInterrupt  # out of the on_shutdown callbacks
 
     old_term = signal.signal(signal.SIGTERM, terminate)
     try:
@@ -613,32 +955,31 @@ def execute(typed, config, run: Run, attach_hint: str | None = None) -> int:
                 if attach_hint:
                     log(attach_hint)
                 run.supervise()
-            except KeyboardInterrupt:
-                interrupted = True
-                print()
-                log("interrupted; stopping")
-            except Shutdown as exc:
-                log(f"shutdown: {exc}")
-            except LaunchError as exc:
-                failed = True
-                if not isinstance(exc, ProcessDied) or not run.deaths:
-                    log(str(exc), "ERROR")
-            except CommandError as exc:
-                failed = True
-                log(str(exc), "ERROR")
-            except Exception:
-                failed = True
-                traceback.print_exc()
+            except (KeyboardInterrupt, Exception) as exc:
+                reason = reason_for(exc, run)
+                if isinstance(exc, KeyboardInterrupt):
+                    interrupted = True
+                    print()
+                    log("interrupted; stopping")
+                elif isinstance(exc, Shutdown):
+                    log(f"shutdown: {exc}")
+                elif isinstance(exc, (LaunchError, CommandError)):
+                    failed = True
+                    if not (isinstance(exc, ProcessDied) and run.deaths):
+                        log(str(exc), "ERROR")  # a death is reported already
+                else:
+                    failed = True
+                    traceback.print_exc()
             finally:
                 signal.signal(signal.SIGINT, kill)
                 try:
-                    run.teardown()
+                    run.teardown(reason)
                 finally:
                     signal.signal(signal.SIGINT, signal.default_int_handler)
     finally:
         signal.signal(signal.SIGTERM, old_term)
 
-    failed = failed or bool(run.deaths)
+    failed = failed or bool(run.deaths) or run.callback_failed
     if run.deaths:
         print(f"{PROG}: {len(run.deaths)} process(es) died unexpectedly:")
         for proc in run.deaths:

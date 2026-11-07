@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import functools
+import inspect
 from typing import Any, Callable
 
 from . import ros_config as rc
@@ -42,7 +44,10 @@ class TypedLaunch(TypedTarget):
         """Run the body on ``procs`` (a libtmux_easy ``Processes``): each
         process it starts is one of the group's, with its own health, log and
         restart. Returns once the body has; the group's owner stops them
-        (``procs.close()``). -> the ``engine.Run``."""
+        with ``procs.close()``, which first unloads the components the body
+        loaded into a container started elsewhere (``Run.held``), so a test
+        leaves none behind. ``on_shutdown`` callbacks run there too (or at
+        once, if the body fails). -> the ``engine.Run``."""
         from . import engine
 
         config = engine.make_config(self.config_type, config, fields)
@@ -50,8 +55,12 @@ class TypedLaunch(TypedTarget):
         try:
             with engine.active(run):
                 self.factory(config)
+        except BaseException as exc:
+            run.call_on_shutdown(engine.reason_for(exc, run))
+            raise
         finally:
             run.detach()  # from here on the group's owner watches health
+            run.bind_close()
         return run
 
     def build(self, session, config: Any = None, /, **fields):
@@ -86,6 +95,14 @@ def launch(factory: Callable | None = None, *, config: type | None = None):
         @launch(config=BringupConfig)                 # or named
         def bringup(config): ...
 
+        @launch                                       # or the signature is the schema
+        def turtles(ns: str = "demo", teleop: bool = True,
+                    background_r: int = Field(0, ge=0, le=255)): ...
+
+    A function whose only parameter is annotated with a model takes the config
+    object; otherwise each parameter is a field (``turtles.config_type`` is the
+    generated model, for a parent to embed) and the body gets them by name.
+
     Also exports ``generate_launch_description`` from the module (unless it has
     one), which is how ``tlaunch`` finds the launch, and which lets a stock
     launch file include it (``stock.py``).
@@ -95,13 +112,11 @@ def launch(factory: Callable | None = None, *, config: type | None = None):
         from . import schema
 
         model = config or schema.config_model(factory)
-        if model is None:
-            raise TypeError(
-                f"@launch {factory.__name__}: annotate its first parameter with "
-                f"the config model (def {factory.__name__}(config: MyConfig)), "
-                "or pass @launch(config=MyConfig)"
-            )
-        typed = TypedLaunch(config_type=model, factory=factory)
+        body = factory
+        if model is None:  # the signature is the schema
+            model = schema.model_from_signature(factory)
+            body = _by_name(factory)
+        typed = TypedLaunch(config_type=model, factory=body)
 
         def generate_launch_description():
             from .stock import description
@@ -116,3 +131,14 @@ def launch(factory: Callable | None = None, *, config: type | None = None):
         return typed
 
     return decorator(factory) if factory is not None else decorator
+
+
+def _by_name(fn: Callable) -> Callable:
+    """``fn(a, b)`` as ``body(config)``: each field passed by name."""
+    names = list(inspect.signature(fn).parameters)
+
+    @functools.wraps(fn)
+    def body(config):
+        return fn(**{n: getattr(config, n) for n in names})
+
+    return body

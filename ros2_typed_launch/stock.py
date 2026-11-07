@@ -59,7 +59,7 @@ def target_args(typed: TypedLaunch) -> list[str]:
     package, _, rest = module.partition(".")
     if rest and not module.startswith("_tlaunch_"):
         return [package, rest]
-    return [inspect.getfile(typed.factory)]
+    return [inspect.getfile(inspect.unwrap(typed.factory))]
 
 
 def _nest(dotted: dict) -> dict:

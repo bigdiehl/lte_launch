@@ -121,19 +121,49 @@ def _is_model(t: Any) -> bool:
 
 
 def config_model(fn: Any) -> type | None:
-    """The model a launch function's first parameter is annotated with, or
-    None (string annotations resolved in the function's module)."""
+    """The model of ``def f(config: MyConfig)``: a function whose only
+    parameter is annotated with a model. None otherwise."""
     import inspect
-    import typing
 
     params = list(inspect.signature(fn).parameters)
-    if not params:
+    if len(params) != 1:
         return None
-    try:
-        hint = typing.get_type_hints(fn).get(params[0])
-    except Exception:  # an unresolvable annotation
-        return None
+    hint = _hints(fn).get(params[0])
     return hint if _is_model(hint) else None
+
+
+def model_from_signature(fn: Any) -> type[BaseModel]:
+    """A model with one field per parameter of ``fn``: its annotation is the
+    type, its default (a value or ``Field(...)``) the default; no default:
+    required. The docstring is the model's (help text)."""
+    import inspect
+
+    hints = _hints(fn)
+    fields: dict[str, Any] = {}
+    for name, param in inspect.signature(fn).parameters.items():
+        if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
+            raise TypeError(f"@launch {fn.__name__}: *args/**kwargs can't be launch arguments")
+        if name not in hints:
+            raise TypeError(
+                f"@launch {fn.__name__}: parameter '{name}' needs a type annotation "
+                f"(def {fn.__name__}({name}: int = 0, ...))"
+            )
+        default = ... if param.default is param.empty else param.default
+        fields[name] = (hints[name], default)
+    camel = "".join(part.capitalize() for part in fn.__name__.split("_"))
+    model = pydantic.create_model(f"{camel}Config", __module__=fn.__module__, **fields)
+    model.__doc__ = inspect.getdoc(fn)
+    return model
+
+
+def _hints(fn: Any) -> dict:
+    """Annotations, strings resolved in the function's module."""
+    import typing
+
+    try:
+        return typing.get_type_hints(fn)
+    except Exception as exc:
+        raise TypeError(f"@launch {fn.__name__}: can't resolve its annotations: {exc}")
 
 
 class _Cls(NamedTuple):
