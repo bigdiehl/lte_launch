@@ -18,8 +18,12 @@
   <exec_depend>rclpy</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
   <exec_depend>composition_interfaces</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <!-- ros2launch: a stock include runs as one `ros2 launch` process -->
+  <exec_depend>ros2launch</exec_depend>
   <exec_depend>rclcpp_components</exec_depend>
-  <!-- The process engine: libtmux_easy's .deb (not a rosdep key yet) -->
+  <!-- The process engine: libtmux_easy's .deb, from its GitHub releases. Not in
+       rosdistro: rosdep/lte_launch.yaml maps the key to the apt name. -->
   <exec_depend>python3-libtmux-easy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <!--
@@ -35,6 +39,8 @@
   <test_depend>turtlesim</test_depend>
   <test_depend>tf2_ros</test_depend>
   <test_depend>composition</test_depend>
+  <test_depend>demo_nodes_cpp</test_depend>
+  <test_depend>lifecycle</test_depend>
   <test_depend>ament_cmake_pytest</test_depend>
   <test_depend>python3-pytest</test_depend>
 

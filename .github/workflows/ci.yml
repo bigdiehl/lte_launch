@@ -1,0 +1,172 @@
+name: CI
+
+# Every push and PR: build, quick tests, every test (live: real nodes, tmux),
+# and the ros-jazzy-lte-launch .deb. A v* tag also attaches the .deb to a
+# GitHub release.
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      libtmux_easy:
+        description: "libtmux_easy: a release tag (v0.4.0) to download, or a branch to build"
+        default: processes-core
+
+env:
+  # The engine, nasa-jpl/libtmux_easy: a v* tag downloads python3-libtmux-easy's
+  # .deb from its GitHub release; anything else builds it from that branch.
+  # Set to a release tag once processes-core is released.
+  LIBTMUX_EASY: ${{ inputs.libtmux_easy || 'processes-core' }}
+
+jobs:
+  libtmux-easy:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download the released .deb
+        if: startsWith(env.LIBTMUX_EASY, 'v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir deb
+          gh release download "$LIBTMUX_EASY" --repo nasa-jpl/libtmux_easy \
+            --pattern 'python3-libtmux-easy_*.deb' --dir deb
+      - name: Check out the branch
+        if: "!startsWith(env.LIBTMUX_EASY, 'v')"
+        uses: actions/checkout@v4
+        with:
+          repository: nasa-jpl/libtmux_easy
+          ref: ${{ env.LIBTMUX_EASY }}
+          path: libtmux_easy
+      - name: Build the .deb (as libtmux_easy's own CI does)
+        if: "!startsWith(env.LIBTMUX_EASY, 'v')"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential debhelper dh-python python3-all \
+                                  python3-pip python3-setuptools pybuild-plugin-pyproject
+          (cd libtmux_easy && dpkg-buildpackage -us -uc -b)
+          mkdir deb && mv python3-libtmux-easy_*.deb deb/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libtmux-easy-deb
+          path: deb/
+
+  test:
+    needs: libtmux-easy
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    env:
+      QT_QPA_PLATFORM: offscreen   # turtlesim without a display
+      TERM: xterm-256color         # tmux
+      ROS_DOMAIN_ID: "42"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ws/src/lte_launch
+      - uses: actions/download-artifact@v4
+        with:
+          name: libtmux-easy-deb
+          path: deb
+      - name: Dependencies
+        run: |
+          apt-get update
+          apt-get install -y ./deb/python3-libtmux-easy_*.deb
+          echo "yaml file://$PWD/ws/src/lte_launch/rosdep/lte_launch.yaml" \
+            > /etc/ros/rosdep/sources.list.d/50-lte-launch.list
+          rosdep update --rosdistro jazzy
+          rosdep install --from-paths ws/src --ignore-src -y --rosdistro jazzy
+      - name: Build
+        working-directory: ws
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install --event-handlers console_direct+
+      - name: Quick tests (nothing starts)
+        working-directory: ws
+        run: |
+          source install/setup.bash
+          python3 -m pytest src/lte_launch/test -q -m "not live"
+      - name: All tests
+        working-directory: ws
+        run: |
+          source install/setup.bash
+          colcon test --event-handlers console_direct+ --return-code-on-test-failure
+      - name: Test results
+        if: always()
+        working-directory: ws
+        run: colcon test-result --verbose
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-logs
+          path: |
+            ws/log/
+            /tmp/tlaunch/
+
+  deb:
+    needs: libtmux-easy
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: lte_launch
+      - uses: actions/download-artifact@v4
+        with:
+          name: libtmux-easy-deb
+          path: deb
+      - name: Dependencies
+        run: |
+          apt-get update
+          apt-get install -y ./deb/python3-libtmux-easy_*.deb \
+                             python3-bloom fakeroot dpkg-dev debhelper
+          echo "yaml file://$PWD/lte_launch/rosdep/lte_launch.yaml" \
+            > /etc/ros/rosdep/sources.list.d/50-lte-launch.list
+          rosdep update --rosdistro jazzy
+          rosdep install --from-paths lte_launch -y --rosdistro jazzy
+      - name: Build ros-jazzy-lte-launch
+        working-directory: lte_launch
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          bloom-generate rosdebian --ros-distro jazzy
+          fakeroot debian/rules binary
+          mkdir ../out && mv ../ros-jazzy-lte-launch_*.deb ../out/
+      - name: Install and smoke-test
+        run: |
+          apt-get install -y ./out/ros-jazzy-lte-launch_*.deb
+          source /opt/ros/jazzy/setup.bash
+          tlaunch --help > /dev/null
+          tlaunch lte_launch turtle_demo_launch.py --dry-run
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ros-jazzy-lte-launch
+          path: out/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, deb]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag matches package.xml
+        run: |
+          version=$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' package.xml)
+          test "$GITHUB_REF_NAME" = "v$version"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            artifacts/ros-jazzy-lte-launch/*.deb artifacts/libtmux-easy-deb/*.deb \
+            --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

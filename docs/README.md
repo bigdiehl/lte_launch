@@ -15,6 +15,7 @@ scratch notes live in [`../working/`](../working/README.md).
 | [goals.md](goals.md) | Goals, principles, the YAML argument, the runtime model (why stock launch is declarative, plan vs script), build vs reuse, proposals P1–P8 |
 | [design.md](design.md) | How it works: decisions, a run end to end and its end sequence, modules, processes, `on_shutdown`, composable and lifecycle nodes, parameter layers, stock boundaries, testing |
 | [parity.md](parity.md) | Every stock `launch`/`launch_ros` feature and its equivalent here; what is next |
+| [releasing.md](releasing.md) | CI jobs, the `ros-jazzy-lte-launch` .deb, rosdep, making a release |
 | [comparison.md](comparison.md) | Against stock Python, stock XML/YAML and simple_launch |
 | [`../examples/README.md`](../examples/README.md) | Every example with its commands |
 

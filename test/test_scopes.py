@@ -9,7 +9,7 @@ import subprocess
 import time
 
 import pytest
-from _live import need_ros
+from _live import need_ros, until
 import yaml
 from pydantic import BaseModel
 
@@ -156,10 +156,14 @@ def live_scoped(config: Probe):
         sim.wait_for_node()
     full = f"/{config.ns}/turtlesim"
     for name in ("background_r", "background_g"):
-        got[name] = subprocess.run(
-            ["ros2", "param", "get", "--no-daemon", full, name],
-            capture_output=True, text=True, timeout=30,
-        ).stdout.strip()  # fmt: skip
+        # A fresh `ros2 param get` can miss a node discovery has just seen.
+        got[name] = until(
+            lambda: subprocess.run(
+                ["ros2", "param", "get", "--no-daemon", full, name],
+                capture_output=True, text=True, timeout=30,
+            ).stdout.strip(),
+            20, f"ros2 param get {name}",
+        )  # fmt: skip
     shutdown("checked")
 
 

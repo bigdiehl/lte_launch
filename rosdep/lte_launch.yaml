@@ -1,0 +1,7 @@
+# rosdep keys not in rosdistro. Use with:
+#   echo "yaml file://$PWD/rosdep/lte_launch.yaml" | sudo tee /etc/ros/rosdep/sources.list.d/50-lte-launch.list
+#   rosdep update
+# python3-libtmux-easy is not in an apt repository: install its .deb from
+# https://github.com/nasa-jpl/libtmux_easy/releases first; rosdep then sees it installed.
+python3-libtmux-easy:
+  ubuntu: [python3-libtmux-easy]
