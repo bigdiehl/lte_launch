@@ -1,19 +1,20 @@
 """Composable nodes, live, with composition's real components: our
 containers (every kind), standalone placements, a container started
-elsewhere (held, unloaded at teardown, lost), failed loads, parameters and
-remappings reaching a component. Verified from outside with a probe node
-(ListNodes, GetParameters, the graph)."""
+elsewhere (held, unloaded at teardown, lost), failed loads, parameters,
+remappings and log levels reaching a component. Verified from outside with
+a probe node (ListNodes, GetParameters, the graph) and the output."""
 
 from __future__ import annotations
 
 import os
+import re
 import signal
 import time
 
 import pytest
 from pydantic import BaseModel
 
-from _live import later, need_ros, until
+from _live import Reader, later, need_ros, until
 from lte_launch import RosParams, component, container, container_at, engine
 from lte_launch import launch, log, namespace
 from lte_launch import ros_config as rc
@@ -267,3 +268,57 @@ def test_params_and_remaps_reach_components(make_run, probe, uniq):
     run.teardown()
     assert {s.pattern for s in ros.unmatched()} == set()
     assert ros.sections[1].shadowed == {"use_sim_time"}
+
+
+def published(output: str, logger: str) -> int:
+    """How many of a Talker's INFO lines (``Publishing: ...``) are there."""
+    return len(re.findall(rf"\[{re.escape(logger)}\]: Publishing:", output))
+
+
+def test_a_components_log_level(make_run, uniq):
+    # Our container: --log-level is on its command line, so it reaches the
+    # components in it -- here the LOGGER:=LEVEL form, for one of them (a
+    # component's logger is its namespace and name, dotted).
+    run = make_run(log_levels=[f"{uniq}.quiet:=warn"])
+    with engine.active(run), namespace(uniq):
+        box = container("box")
+        assert f"{uniq}.quiet:=warn" in box.proc.argv
+        box.load(*T, name="quiet")
+        box.load(*T, name="loud")
+        until(lambda: published(box.output(), f"{uniq}.loud") >= 2, 15, "loud's lines")
+        assert published(box.output(), f"{uniq}.quiet") == 0, box.output()
+
+        # ... and the bare LEVEL form, for the whole container.
+        run.log_levels = ["warn"]
+        hush = container("hush")
+        assert hush.proc.argv[-2:] == ["--log-level", "warn"]
+        hush.load(*T, name="hushed")
+        n = published(box.output(), f"{uniq}.loud")  # talkers: 1 Hz
+        until(lambda: published(box.output(), f"{uniq}.loud") >= n + 2, 15, "more")
+        assert published(hush.output(), f"{uniq}.hushed") == 0, hush.output()
+    run.teardown()
+    assert run.deaths == []
+
+
+@pytest.mark.xfail(
+    reason="Jazzy's rclcpp_components ignores LoadNode's log_level (no "
+    "logger call in libcomponent_manager), so --log-level cannot reach a "
+    "component in a container started elsewhere",
+    strict=True,
+)
+def test_a_components_log_level_in_a_container_started_elsewhere(
+    make_run, external, uniq
+):
+    ext, ext_proc = external
+    out = Reader(ext_proc)
+    run = make_run(log_levels=["warn"])  # LoadNode.log_level = WARN (30)
+    try:
+        with engine.active(run), namespace(uniq):
+            box = container_at(ext)
+            box.load(*T, name="quiet")
+            run.log_levels = []
+            box.load(*T, name="loud")
+            until(lambda: published(out.text, f"{uniq}.loud") >= 3, 15, "loud's")
+            assert published(out.text, f"{uniq}.quiet") == 0
+    finally:
+        run.teardown()  # unload while the container is still up
