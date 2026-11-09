@@ -54,6 +54,7 @@ OWN_WITH_VALUE = {
     "--tmux-session",
     "--log-level",
     "--stop-timeout",
+    "--kill-timeout",
 }
 OWN_FLAGS = {
     "-h",
@@ -370,6 +371,15 @@ def add_own_args(parser: argparse.ArgumentParser):
         "stopping (default 10; a node's stop_timeout= overrides it)",
     )
     g.add_argument(
+        "--kill-timeout",
+        type=float,
+        default=None,
+        metavar="S",
+        dest="$kill_timeout",
+        help="seconds each process then gets after SIGTERM before SIGKILL "
+        "(default 5; a node's kill_timeout= overrides it; libtmux_easy 0.5.0)",
+    )
+    g.add_argument(
         "--dry-run",
         action="store_true",
         dest="$dry_run",
@@ -538,21 +548,70 @@ def layer_config(model: type, files: list[str], cli: dict[str, Any], own: dict):
     return merged, sources, ros
 
 
-def save_effective(text: str, label: str) -> str:
-    """Write the effective config where it can be read after the fact.
+def save_effective(text: str, directory: str) -> str:
+    """Write the effective config into the run's log dir, as ``config.yaml``.
 
     Every run leaves one behind, so "what config did that actually launch with?"
     is always answerable -- and the file is a valid ``--config`` input, so the
     same run can be reproduced from it.
     """
-    import tempfile
-
-    name = re.sub(r"\W+", "_", label).strip("_") or "launch"
-    directory = Path(tempfile.gettempdir()) / "lte-launch"
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{name}-{os.getpid()}.yaml"
+    path = Path(directory) / "config.yaml"
     path.write_text(text)
     return str(path)
+
+
+def log_root() -> str:
+    """Where ROS logs go, as stock: ``$ROS_LOG_DIR``, else ``$ROS_HOME/log``,
+    else ``~/.ros/log``; runs go in its ``lte-launch/``."""
+    root = os.environ.get("ROS_LOG_DIR") or os.path.join(
+        os.environ.get("ROS_HOME") or os.path.join("~", ".ros"), "log"
+    )
+    return os.path.join(os.path.expanduser(root), "lte-launch")
+
+
+def new_log_dir(stem: str) -> str:
+    """A new ``<root>/<stem>-<time>-<pid>/`` and ``<root>/latest`` pointing at
+    it (as stock's ``~/.ros/log/latest``)."""
+    import time
+
+    root = log_root()
+    stamp = time.strftime("%Y-%m-%d-%H-%M-%S")
+    path = os.path.join(root, f"{stem}-{stamp}-{os.getpid()}")
+    os.makedirs(path, exist_ok=True)
+    latest = os.path.join(root, "latest")
+    tmp = f"{latest}.{os.getpid()}"
+    try:  # replaced in one step: a concurrent run never sees it missing
+        os.symlink(os.path.basename(path), tmp)
+        os.replace(tmp, latest)
+    except OSError:
+        pass
+    return path
+
+
+class Tee:
+    """A stream that also writes to a file: our stdout/stderr, copied into
+    ``launch.log`` (with the processes' echoed output, as stock's)."""
+
+    def __init__(self, stream, file):
+        self.stream, self.file = stream, file
+
+    def write(self, text):
+        self.stream.write(text)
+        try:
+            self.file.write(text)
+        except ValueError:  # closed: a thread still writing after the run
+            pass
+        return len(text)
+
+    def flush(self):
+        self.stream.flush()
+        try:
+            self.file.flush()
+        except ValueError:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self.stream, name)
 
 
 # --------------------------------------------------------------------------
@@ -606,15 +665,31 @@ def run(
 ) -> int:
     """Run the launch: its body starts processes as it runs, as subprocesses
     or tmux panes, in a libtmux_easy ``Processes`` group."""
-    import tempfile
+    stem = run_label(target)
+    if own["dry_run"]:
+        return _run(typed, config, own, ros, sources, label, stem, None)
+    log_dir = new_log_dir(stem)
+    # The processes' output is echoed to our stdout as it comes: line by
+    # line, even into a pipe (`| tee`, a stock `ros2 launch` include).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+    out, err = sys.stdout, sys.stderr
+    with open(os.path.join(log_dir, "launch.log"), "w", buffering=1) as f:
+        sys.stdout, sys.stderr = Tee(out, f), Tee(err, f)
+        try:
+            return _run(typed, config, own, ros, sources, label, stem, log_dir)
+        finally:
+            sys.stdout.flush()
+            sys.stdout, sys.stderr = out, err
 
+
+def _run(typed, config, own, ros, sources, label, stem, log_dir) -> int:
+    """run(), with its log dir (None: a dry run)."""
     from . import engine
 
-    stem = run_label(target)
-    log_dir = os.path.join(tempfile.gettempdir(), "lte-launch", f"{stem}-{os.getpid()}")
     procs = session = None
     join = False
-    if not own["dry_run"]:
+    if log_dir is not None:
         try:
             from libtmux_easy.processes import Processes
         except ImportError as exc:
@@ -622,10 +697,11 @@ def run(
                 f"lte-launch needs libtmux_easy ({exc}): install its .deb, or "
                 "PYTHONPATH=~/projects/libtmux_easy/src"
             ) from None
-        # The processes' output is echoed to our stdout as it comes: line by
-        # line, even into a pipe (`| tee`, a stock `ros2 launch` include).
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(line_buffering=True)
+        kill = {}  # before a tmux session opens
+        if own["kill_timeout"] is not None:
+            if not engine.supports_kill_timeout(Processes):
+                raise TlaunchError(f"--kill-timeout {engine.KILL_TIMEOUT_NEEDS}")
+            kill = {"sigterm_timeout": own["kill_timeout"]}
         prefix = ""
         if any(own[flag] for flag in TMUX_FLAGS):
             join = bool(os.environ.get("TMUX")) and not own["tmux_session"]
@@ -634,22 +710,22 @@ def run(
             prefix = stem if join else ""
         procs = Processes(
             stem, tmux=session, prefix=prefix, log_dir=log_dir, echo=["*"],
-            sigint_timeout=own["stop_timeout"],
+            sigint_timeout=own["stop_timeout"], **kill,
         )  # fmt: skip
 
     run = engine.Run(
         procs,
         label=stem,
         ros=ros,
-        params_dir=os.path.join(log_dir, "params"),
+        params_dir=log_dir and os.path.join(log_dir, "params"),
         log_levels=own["log_level"],
         log_commands=own["log_commands"],
         launch_prefix=own["launch_prefix"],
         launch_prefix_filter=own["launch_prefix_filter"],
     )
-    if not own["dry_run"]:
+    if log_dir is not None:
         saved = save_effective(
-            effective.render(typed.config_type, config, sources, ros, label), label
+            effective.render(typed.config_type, config, sources, ros, label), log_dir
         )
         print(f"[INFO] [{PROG}]: effective config written to {saved}")
     hint = None
@@ -661,7 +737,7 @@ def run(
         for item in run.plan:
             print(f"  {item.name}\n      {item.command}")
     if procs is not None:
-        print(f"[INFO] [{PROG}]: process logs: {log_dir}")
+        print(f"[INFO] [{PROG}]: logs: {log_dir}")
     if session is not None:
         note = engine.close_tmux(session, keep=code != 0 or own["tmux_dash"], joined=join)
         if note:

@@ -22,7 +22,7 @@ from typing import Any, Callable
 
 from . import engine
 from . import ros_config as rc
-from . import schema
+from . import schema, stock_scopes
 from .command import find_executable, fqn, join_namespace, node_command
 from .command import params_file, stock_arg
 from .engine import Proc
@@ -82,6 +82,7 @@ def node(
     respawn_max: int = -1,
     required: bool = False,
     stop_timeout: float | None = None,
+    kill_timeout: float | None = None,
     timeout: float = 30.0,
     prefix: str | list[str] | None = None,
 ) -> Proc:
@@ -99,6 +100,9 @@ def node(
     needs a TTY, so ``--tmux``.
     ``stop_timeout``: seconds it gets after SIGINT before SIGTERM, when
     stopped (default: ``--stop-timeout``, 10 s; stock: ``sigterm_timeout``).
+    ``kill_timeout``: seconds it then gets after SIGTERM before SIGKILL
+    (default: ``--kill-timeout``, 5 s; stock: ``sigkill_timeout``; needs
+    libtmux_easy 0.5.0).
     """
     run = engine.current()
     ns = join_namespace(run.namespace, namespace)
@@ -123,7 +127,7 @@ def node(
         pname, argv, window=win, fqn=full, exits=exits, env=env, cwd=cwd,
         respawn=respawn, respawn_max=respawn_max, required=required,
         prefix=prefix,
-        stop_timeout=stop_timeout,
+        stop_timeout=stop_timeout, kill_timeout=kill_timeout,
     )  # fmt: skip
     if ready:
         proc.wait_for(ready, timeout)
@@ -143,6 +147,7 @@ def process(
     respawn_max: int = -1,
     required: bool = False,
     stop_timeout: float | None = None,
+    kill_timeout: float | None = None,
     timeout: float = 30.0,
     prefix: str | list[str] | None = None,
 ) -> Proc:
@@ -151,7 +156,7 @@ def process(
     proc = engine.current().start(
         name, cmd, window=window, exits=exits, env=env, cwd=cwd, respawn=respawn,
         respawn_max=respawn_max, required=required, prefix=prefix,
-        stop_timeout=stop_timeout,
+        stop_timeout=stop_timeout, kill_timeout=kill_timeout,
     )  # fmt: skip
     if ready:
         proc.wait_for(ready, timeout)
@@ -171,7 +176,11 @@ def include(target, config: Any = None, /, **fields):
       processes (and ``ros2 launch``) may end with (None: any end is a
       death); ``allow=`` names of its processes whose end is no death
       (``talker``, for one it respawns itself); ``ready=``, ``timeout=`` as
-      for ``process()``.
+      for ``process()``. The enclosing ``ros_params()`` and ``ros_remaps()``
+      scopes, and universal (``/**``) config-file sections, reach its nodes
+      as stock ``SetParametersFromFile``/``SetRemap`` would (a generated
+      wrapper file; ``stock_scopes.py``). ``namespace()`` does not: pass the
+      file's own ``namespace`` argument, if it has one.
     """
     from .core import TypedLaunch
 
@@ -185,11 +194,19 @@ def include(target, config: Any = None, /, **fields):
         allow = fields.pop("allow", ())
         ready = fields.pop("ready", None)
         timeout = fields.pop("timeout", 30.0)
-        argv = ["ros2", "launch", target] + ([config] if config else [])
-        argv += [f"{k}:={stock_arg(v)}" for k, v in fields.items()]
         run = engine.current()
+        win = window or run.window_for(run.namespace)
+        params, remaps = stock_scopes.scopes(run, f"{win}:{name} (stock include)")
+        wrapped = stock_scopes.wrapper(
+            target if config else None, file, params=params, remaps=remaps,
+            directory=run.params_dir, stem=f"{win}.{name}",
+            args=list(fields),
+        )  # fmt: skip
+        argv = ["ros2", "launch"]
+        argv += [wrapped] if wrapped else [target] + ([config] if config else [])
+        argv += [f"{k}:={stock_arg(v)}" for k, v in fields.items()]
         proc = run.start(
-            name, argv, window=window, exits=exits,
+            name, argv, window=win, exits=exits,
             on_line=run.stock_watch(exits, allow),
         )  # fmt: skip
         if ready:

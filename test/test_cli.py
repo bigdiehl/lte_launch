@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 from pathlib import Path
 
@@ -503,7 +504,23 @@ def test_effective_config(sample_launch, write, capsys, tmp_path):
     assert re.search(r"other: 1\s+#\s+\S+c\.yaml", out)
 
     text = "launch_args:\n  map: m\n"
-    path = cli.save_effective(text, "pkg some_launch.py")
-    assert Path(path).read_text() == text
-    # Named after the launch, so two runs of different launches don't collide.
-    assert "pkg_some_launch_py" in path and path.endswith(".yaml")
+    path = cli.save_effective(text, str(tmp_path))
+    assert Path(path).read_text() == text and path == str(tmp_path / "config.yaml")
+
+
+def test_log_dir(tmp_path, monkeypatch):
+    """Runs log where ROS does: $ROS_LOG_DIR, $ROS_HOME/log, ~/.ros/log."""
+    monkeypatch.delenv("ROS_LOG_DIR", raising=False)
+    monkeypatch.delenv("ROS_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    assert cli.log_root() == str(tmp_path / "home/.ros/log/lte-launch")
+    monkeypatch.setenv("ROS_HOME", str(tmp_path / "rh"))
+    assert cli.log_root() == str(tmp_path / "rh/log/lte-launch")
+    monkeypatch.setenv("ROS_LOG_DIR", str(tmp_path / "ld"))
+    root = tmp_path / "ld/lte-launch"
+    assert cli.log_root() == str(root)
+    a = cli.new_log_dir("demo")
+    assert os.path.isdir(a) and os.path.basename(a).startswith("demo-")
+    assert os.path.realpath(root / "latest") == a
+    b = cli.new_log_dir("other")
+    assert os.path.realpath(root / "latest") == b and os.path.isdir(a)

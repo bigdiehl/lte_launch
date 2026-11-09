@@ -125,8 +125,10 @@ def node_command(
     param_files: list[str] | None = None,
     ros_arguments: list[str] | None = None,
 ) -> list[str]:
-    """The argv for one node. ``param_files`` come before the generated one,
-    so typed and config-file values win over them."""
+    """The argv for one node. ``param_files`` come before the generated one
+    and ``ros_arguments`` last, so under ``/**`` typed and config-file values
+    win over the files and ``-p`` over both (rcl: later wins per node key;
+    keys apply in first-seen order -- see docs/design.md)."""
     argv = [executable, *(arguments or []), "--ros-args"]
     if name:
         argv += ["-r", f"__node:={name}"]

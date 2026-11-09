@@ -5,6 +5,7 @@
 #   lte-launch lte_launch lifecycle_launch.py --autostart         # same, one keyword
 #   lte-launch lte_launch lifecycle_launch.py --blink 3           # deactivate, reactivate
 #   lte-launch lte_launch lifecycle_launch.py --skip_configure    # refused: exit 1
+#   lte-launch lte_launch lifecycle_launch.py --keep_active       # reactivated if deactivated
 #   lte-launch lte_launch lifecycle_launch.py --dry-run           # `ros2 lifecycle set` lines
 
 from pydantic import BaseModel, Field
@@ -20,6 +21,7 @@ class LifecycleConfig(BaseModel):
     listener: bool = Field(True, description="Start the listener too")
     blink: float = Field(0.0, ge=0, description="Seconds active before one deactivate/activate")
     skip_configure: bool = Field(False, description="Activate straight away (refused)")
+    keep_active: bool = Field(False, description="Activate it again when deactivated")
 
 
 @launch
@@ -45,4 +47,10 @@ def lifecycle(config: LifecycleConfig):
             talker.transition("deactivate")
             sleep(1.0)
             talker.activate()
+        if config.keep_active:  # after bringup too: on the main thread, in supervise
+            @talker.on_state("inactive")
+            def reactivate():
+                log(f"{talker.fqn} was deactivated; activating it again")
+                talker.activate()
+
         log(f"{talker.fqn} is {talker.state}")

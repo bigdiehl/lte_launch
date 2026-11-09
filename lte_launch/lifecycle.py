@@ -78,6 +78,7 @@ class LifecycleNode(engine.ProcHandle):
         self.finalize = finalize
         self._clients: dict[str, object] = {}
         self._dry_state = "unconfigured"
+        self._events = None  # the transition_event subscription
 
     def __repr__(self) -> str:
         return f"LifecycleNode({self.fqn!r})"
@@ -183,6 +184,47 @@ class LifecycleNode(engine.ProcHandle):
     def activate(self, timeout: float | None = 30.0) -> str:
         """Configure (if needed) and activate."""
         return self.set_state("active", timeout)
+
+    # ----------------------------------------------------------- callbacks
+    def on_state(
+        self,
+        label: str | None,
+        fn=None,
+        /,
+        *,
+        once: bool = False,
+        timeout: float | None = 10.0,
+    ):
+        """``fn(label)`` (or ``fn()``) each time the node reaches ``label``
+        (a primary state or a transition state such as ``configuring``;
+        None: any), from now on, whoever made the transition -- the body
+        too. From ``<node>/transition_event``, subscribed here; the line
+        waits (``timeout``) until the subscription has the node's publisher,
+        so no transition after it is missed. Runs on the main thread, as
+        ``Proc.on_exit``. A decorator too; -> ``fn``."""
+        run = self.run
+        if not run.dry and self._events is None:
+            from lifecycle_msgs.msg import TransitionEvent
+
+            self._events = run.graph().create_subscription(
+                TransitionEvent,
+                f"{self.fqn}/transition_event",
+                lambda msg: run.emit(self, "state", msg.goal_state.label),
+                10,
+            )
+            run.subscribed = True
+            sub = self._events
+            run.wait(
+                lambda: True if sub.get_publisher_count() else None,
+                timeout,
+                f"{self.fqn}/transition_event",
+            )
+        return run.register(self, "state", fn, label, once)
+
+    def off(self, fn=None) -> int:
+        """Unregister ``fn`` (None: every callback of this node, its
+        process's too); -> how many were removed."""
+        return self.run.off(fn, (self, self.proc) if self.proc else (self,))
 
     def wait_for_state(self, label: str, timeout: float | None = 30.0) -> str:
         """Wait until the node reports ``label`` (it, or someone else, makes

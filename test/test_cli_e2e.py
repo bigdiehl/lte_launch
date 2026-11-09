@@ -44,7 +44,8 @@ def e2e(config: E2EConfig):
 
 
 @pytest.fixture
-def e2e(tmp_path):
+def e2e(tmp_path, monkeypatch):
+    monkeypatch.setenv("ROS_LOG_DIR", str(tmp_path / "log"))  # run_cli inherits it
     if not shutil.which("lte-launch"):
         pytest.skip("lte-launch not on PATH (source the workspace's install/setup.bash)")
     pytest.importorskip("libtmux_easy.processes")
@@ -71,17 +72,27 @@ def test_exit_codes_and_what_a_run_leaves(e2e, tmp_path):
 
     saved = re.search(r"effective config written to (\S+)", out).group(1)
     assert yaml.safe_load(open(saved))["launch_args"] == {"mode": "finish", "count": 1}
-    logs = re.search(r"process logs: (\S+)", out).group(1)
-    assert "hello from main" in "".join(
-        open(os.path.join(logs, f)).read()
-        for f in os.listdir(logs)
-        if f.endswith(".log")
-    )
+    logs = re.search(r"\]: logs: (\S+)", out).group(1)
+    root = tmp_path / "log" / "lte-launch"
+    assert os.path.dirname(logs) == str(root) and saved == f"{logs}/config.yaml"
+    assert os.path.realpath(root / "latest") == logs  # as stock's latest
+    files = sorted(os.listdir(logs))
+    assert "launch.log" in files
+    # launch.log is the whole transcript: our lines and the echoed output
+    launch_log = open(os.path.join(logs, "launch.log")).read()
+    assert "[lte-launch]: up: 1 process(es)" in launch_log
+    assert "hello from main" in launch_log and "logs: " in launch_log
+    # ... and each process has its own
+    own = [f for f in files if f.endswith(".log") and f != "launch.log"]
+    assert "hello from main" in "".join(open(os.path.join(logs, f)).read() for f in own)
     # ... and the effective config is a valid --config: it round-trips.
     code, shown, err = run_cli(e2e, "--config", saved, "--show-config")
-    assert code == 0 and re.search(r"mode: \"?finish\"? +# /tmp/lte-launch/", shown), (
+    assert code == 0 and re.search(r'mode: "?finish"? +# \S+/config\.yaml', shown), (
         shown + err
     )
+    # a dry run leaves no log dir behind
+    before = set(os.listdir(root))
+    assert run_cli(e2e, "--dry-run")[0] == 0 and set(os.listdir(root)) == before
 
     # 1: a death after up; a body that raises; a typo'd executable.
     code, out, _ = run_cli(e2e, "--mode", "die")

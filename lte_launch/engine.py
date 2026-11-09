@@ -16,6 +16,7 @@ so Ctrl-C is a plain ``KeyboardInterrupt`` wherever the body happens to be.
 
 from __future__ import annotations
 
+import collections
 import contextlib
 import inspect
 import os
@@ -49,6 +50,22 @@ class ProcessDied(LaunchError):
 
 class WaitTimeout(LaunchError):
     pass
+
+
+def supports_kill_timeout(procs: Any) -> bool:
+    """Whether this libtmux_easy ``Processes`` (a group, or the class) has a
+    SIGTERM grace, ``start(sigterm_timeout=)``: libtmux_easy 0.5.0 on."""
+    start = getattr(procs, "start", None)
+    try:
+        return "sigterm_timeout" in inspect.signature(start).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+KILL_TIMEOUT_NEEDS = (
+    "needs libtmux_easy 0.5.0 or later (Processes(sigterm_timeout=)); "
+    "this one has a fixed 5 s SIGTERM grace"
+)
 
 
 class Shutdown(Exception):
@@ -146,6 +163,29 @@ def _codes(exits) -> tuple | None:
 
 
 # --------------------------------------------------------------------------
+# event callbacks: on_exit, on_output, on_state
+# --------------------------------------------------------------------------
+@dataclass(eq=False)
+class Handler:
+    """One registered callback: ``fn`` for ``event`` of ``source`` (a
+    ``Proc`` or a ``LifecycleNode``), where ``match`` (a regex, a state label
+    or None) fits the value."""
+
+    source: Any
+    event: str  # exit, output, state
+    fn: Callable
+    match: Any = None
+    once: bool = False
+
+    def fits(self, value) -> bool:
+        if self.match is None:
+            return True
+        if isinstance(self.match, re.Pattern):
+            return bool(self.match.search(value))
+        return self.match == value
+
+
+# --------------------------------------------------------------------------
 # a process handle
 # --------------------------------------------------------------------------
 @dataclass
@@ -172,6 +212,7 @@ class Proc:
     respawn_max: int = -1
     required: bool = False
     stop_timeout: float | None = None  # SIGINT's grace; None: the group's
+    kill_timeout: float | None = None  # SIGTERM's grace; None: the group's
     respawns: int = 0
     pending: bool = False  # respawning: until the new run's exit is handled
     stopping: bool = False
@@ -251,6 +292,26 @@ class Proc:
         self.stopping = False
         self.run.procs[self.key].start()
         return self
+
+    # ----------------------------------------------------------- callbacks
+    def on_exit(self, fn: Callable | None = None, /, *, once: bool = False):
+        """``fn(code)`` (or ``fn()``) each time it ends on its own and that is
+        no death: a code in ``exits``, or a respawn. Not for a death, nor for
+        ``stop()``/``restart()`` or teardown. Runs on the main thread (see
+        ``Run.dispatch``). A decorator too; -> ``fn``."""
+        return self.run.register(self, "exit", fn, None, once)
+
+    def on_output(
+        self, pattern: str, fn: Callable | None = None, /, *, once: bool = False
+    ):
+        """``fn(line)`` (or ``fn()``) for each line matching ``pattern`` it
+        prints from now on (not lines already read). A decorator too."""
+        return self.run.register(self, "output", fn, re.compile(pattern), once)
+
+    def off(self, fn: Callable | None = None) -> int:
+        """Unregister ``fn`` (None: every callback of this process); ->
+        how many were removed."""
+        return self.run.off(fn, (self,))
 
 
 class ProcHandle:
@@ -358,6 +419,12 @@ class Run:
         self.containers: dict = {}
         #: lifecycle nodes (``lifecycle``): sent ``shutdown`` at teardown
         self.lifecycle: list = []
+        #: event callbacks; (handler, value) queued from watcher/reader
+        #: threads, called on the main thread by ``dispatch()``
+        self.handlers: list[Handler] = []
+        self._events: collections.deque = collections.deque()
+        self._dispatching = False
+        self.subscribed = False  # a callback needs our rclpy node spun
         self._wake = threading.Event()
         self._namespaces: list[str] = ["/"]
         self._windows: list[str | None] = [None]
@@ -458,15 +525,23 @@ class Run:
         prefix: str | list[str] | None = None,
         on_line: Callable[[Proc, str], None] | None = None,
         stop_timeout: float | None = None,
+        kill_timeout: float | None = None,
     ) -> Proc:
         """Start ``cmd`` (an argv, or a shell command line) as ``window:name``.
 
         ``prefix``: put before the command (``"gdb -ex run --args"``) instead
         of the run's ``--launch-prefix``, whatever its filter (``""``: none).
         ``on_line(proc, line)``: each line it prints, from a reader thread.
-        ``stop_timeout``: seconds SIGINT gets before SIGTERM when stopped.
+        ``stop_timeout``: seconds SIGINT gets before SIGTERM when stopped;
+        ``kill_timeout``: seconds SIGTERM then gets before SIGKILL.
         """
         self.check()
+        if (
+            kill_timeout is not None
+            and self.procs is not None
+            and not supports_kill_timeout(self.procs)
+        ):
+            raise LaunchError(f"{name}: kill_timeout= {KILL_TIMEOUT_NEEDS}")
         window = window or self.window_for(self.namespace)
         argv = None
         words = shlex.split(prefix) if isinstance(prefix, str) else prefix
@@ -483,21 +558,27 @@ class Run:
         respawn = 0.0 if respawn is True else (respawn or None)
         proc = Proc(
             self, name, window, command, argv, fqn, _codes(exits), respawn,
-            respawn_max, required, stop_timeout,
+            respawn_max, required, stop_timeout, kill_timeout,
         )  # fmt: skip
         if self.log_commands:
             log(f"{proc.key}: {command}")
         if self.dry:
             self.plan.append(Planned(proc.key, command, argv))
         else:
-            hook = () if on_line is None else [lambda line: on_line(proc, line)]
+            def hook(line: str) -> None:  # a reader thread
+                if on_line is not None:
+                    on_line(proc, line)
+                self.emit(proc, "output", line)
+
             self.procs.start(
                 proc.key,
                 command,
                 exits=proc.exits,
                 env={**BASE_ENV, **self.env, **(env or {})},
-                fail_on=hook,  # returns None: never a fail_on hit itself
+                fail_on=[hook],  # returns None: never a fail_on hit itself
                 sigint_timeout=stop_timeout,
+                # only when asked: an older libtmux_easy has no such option
+                **({} if kill_timeout is None else {"sigterm_timeout": kill_timeout}),
             )
         self.started.append(proc)
         return proc
@@ -518,6 +599,7 @@ class Run:
             return
         code = code_of(status)
         respawns = proc.respawns
+        death = False
         if proc.respawn is not None and (
             proc.respawn_max < 0 or proc.respawns < proc.respawn_max
         ):
@@ -526,9 +608,12 @@ class Run:
             log(f"{proc.who} ended ({why(code)}); respawning in {proc.respawn:g} s", "WARN")
             threading.Timer(proc.respawn, self._respawn, args=(proc,)).start()
         elif died:
+            death = True
             self._died(proc, code)
         else:
             log(f"{proc.key} finished ({why(code)})")
+        if not death:
+            self.emit(proc, "exit", code)
         if proc.required and not died and self.shutdown_requested is None:
             self.shutdown_requested = f"{proc.key} (required) ended"
         if proc.respawns == respawns:  # no new respawn scheduled: settled
@@ -604,6 +689,7 @@ class Run:
         while True:
             if check:
                 self.check()
+                self.dispatch()
             result = ready()
             if result is not None:
                 return result
@@ -693,8 +779,12 @@ class Run:
         last = time.monotonic()
         while True:
             self.check()
+            self.dispatch()
             if not (
-                any(p.running for p in self.started) or self._respawning() or self.held
+                any(p.running for p in self.started)
+                or self._respawning()
+                or self.held
+                or self._events
             ):
                 if self._wake.wait(0.3):  # a reader may still be on its last lines
                     self._wake.clear()
@@ -704,7 +794,7 @@ class Run:
             if self.held and time.monotonic() - last > 2.0:
                 last = time.monotonic()
                 self._check_held(misses)
-            self._wake.wait(0.5)
+            self._wake.wait(0.1 if self.subscribed else 0.5)
             self._wake.clear()
 
     def _check_held(self, misses: dict[int, int]) -> None:
@@ -721,6 +811,75 @@ class Run:
     def _respawning(self) -> bool:
         return any(p.pending for p in self.started)
 
+    # ------------------------------------------------------------ callbacks
+    def register(self, source, event: str, fn, match=None, once: bool = False):
+        """Add a callback (``fn`` None: -> a decorator); -> ``fn``."""
+
+        def add(fn: Callable) -> Callable:
+            self.handlers.append(Handler(source, event, fn, match, once))
+            return fn
+
+        return add(fn) if fn is not None else add
+
+    def off(self, fn: Callable | None = None, sources: tuple = ()) -> int:
+        """Remove the callbacks ``fn`` (None: any) of ``sources``; -> how many."""
+        keep = [
+            h for h in self.handlers
+            if not ((fn is None or h.fn == fn) and h.source in sources)
+        ]  # fmt: skip
+        removed = len(self.handlers) - len(keep)
+        self.handlers = keep
+        return removed
+
+    def emit(self, source, event: str, value) -> None:
+        """Queue the callbacks ``value`` fits (any thread). Dropped once the
+        run is ending: no callbacks for teardown's exits."""
+        if self.closing or self._ending:
+            return
+        hits = [
+            h for h in list(self.handlers)
+            if h.source is source and h.event == event and h.fits(value)
+        ]  # fmt: skip
+        if hits:
+            self._events.extend((h, value) for h in hits)
+            self._wake.set()
+
+    def dispatch(self) -> None:
+        """Call the queued callbacks, one at a time, on the main thread:
+        inside every wait and in ``supervise()``. Not inside a callback (its
+        own waits queue the rest), an ``on_shutdown`` callback, or once the
+        run is ending. A callback's error propagates: it fails the run as a
+        body error would (``shutdown()`` in one ends it cleanly)."""
+        if (
+            self._dispatching
+            or self._ending
+            or self.closing
+            or threading.current_thread() is not threading.main_thread()
+        ):
+            return
+        if self.subscribed and self._graph is not None:
+            self.spin(0)
+        self._dispatching = True
+        try:
+            while self._events:
+                handler, value = self._events.popleft()
+                if handler not in self.handlers:
+                    continue  # unregistered meanwhile, or a ``once`` done
+                if handler.once:
+                    self.handlers.remove(handler)
+                args = (value,) if _takes_reason(handler.fn) else ()
+                try:
+                    handler.fn(*args)
+                except (Shutdown, KeyboardInterrupt):
+                    raise
+                except BaseException:
+                    name = getattr(handler.fn, "__name__", None) or repr(handler.fn)
+                    log(f"on_{handler.event} callback {name} failed", "ERROR")
+                    raise
+                self.check()
+        finally:
+            self._dispatching = False
+
     def on_shutdown(self, fn: Callable, timeout: float | None = 10.0) -> None:
         self.callbacks.append((fn, timeout))
 
@@ -734,6 +893,7 @@ class Run:
         if not isinstance(reason, Reason):
             reason = Reason("shutdown", reason)
         self.closing = True  # an exit from here on is no death, no respawn
+        self._events.clear()
         ok = True
         try:
             self._ending = True
@@ -791,7 +951,7 @@ class Run:
 
     def teardown(self, reason: str | None = None) -> None:
         """Stop everything still running, all at once (each process on its
-        own ``stop_timeout``); see ``_end``."""
+        own ``stop_timeout`` and ``kill_timeout``); see ``_end``."""
         procs = self.procs
         self._end(
             reason if reason is not None else reason_for(None, self),
