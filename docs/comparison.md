@@ -25,7 +25,7 @@ from its README (`devel` branch, read 2026-11-05), not from its source code. Goa
 | Shutdown hooks | `OnShutdown` | Same | Same | `on_shutdown(fn)`, before any process is signalled |
 | Includes | Path + source + string args | String args | `sl.include(pkg, file, launch_arguments=)` | Typed: `import` + `include(fn, cfg)`; stock: `include("pkg", "file", **args)` (one process; its deaths are ours) |
 | Dead node exit code | 0 | 0 | 0 | 1, with a summary |
-| Teardown | SIGINT per process | Same | Same | All at once, each on its own `stop_timeout` |
+| Teardown | SIGINT per process | Same | Same | All at once, each on its own `stop_timeout`, `kill_timeout` |
 | Ordered bringup | Event handlers | Event handlers | `When(node, OnProcessStart, ...)` | Plain code: `node()` starts now, waits block |
 | Per-process TTY / panes | No | No | No | `--tmux`, dashboard |
 | Engine | launch | launch | launch | libtmux_easy `Processes` |

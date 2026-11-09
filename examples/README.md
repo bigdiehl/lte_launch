@@ -88,6 +88,8 @@ lte-launch lte_launch lifecycle_launch.py                    # configure, activa
 lte-launch lte_launch lifecycle_launch.py --autostart        # the same, one keyword
 lte-launch lte_launch lifecycle_launch.py --blink 3          # deactivate, activate again
 lte-launch lte_launch lifecycle_launch.py --skip_configure ; echo $?   # refused: 1
+lte-launch lte_launch lifecycle_launch.py --keep_active      # on_state: reactivated
+ros2 lifecycle set /lc/lc_talker deactivate                      # ... and back to active
 lte-launch lte_launch lifecycle_launch.py --dry-run          # `ros2 lifecycle set` lines
 ros2 lifecycle get /lc/lc_talker                                 # while it runs
 ```
@@ -144,4 +146,4 @@ examples/lte_test/run.sh -v --tmux     # under the libtmux_easy dashboard
 Values may use stock substitutions (`$(env HOME)`, `$(find-pkg-share pkg)`, ...) and
 `$(var NAME)`, which reads this launch's own arguments by dotted path. `launch_args:` is checked
 against the schema; node sections never are. Every run writes its effective config to
-`/tmp/lte-launch/<launch>-<pid>.yaml`, valid `--config` input.
+`~/.ros/log/lte-launch/<launch>-<time>-<pid>/config.yaml`, valid `--config` input.

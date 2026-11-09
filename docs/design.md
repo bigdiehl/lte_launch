@@ -55,13 +55,19 @@ def turtle_bringup(config: BringupConfig):
 Exit code: 0 clean or interrupted, 1 a death, failed bringup or failed `on_shutdown`, 2 a config
 error.
 
+Logs, as stock's: each run gets `$ROS_LOG_DIR` (else `$ROS_HOME/log`, else `~/.ros/log`)
+`/lte-launch/<launch>-<time>-<pid>/`, linked from `lte-launch/latest`. In it: `launch.log` (all
+of our stdout/stderr, the echoed output included), `<window>.<name>.log` per process,
+`config.yaml` (the effective config), `params/`. A dry run writes none.
+
 ### The end sequence (`Run._end`)
 
 1. `on_shutdown` callbacks, last registered first; every process still up.
 2. Lifecycle nodes: `shutdown` to each of ours still running, all at once (5 s cap).
 3. Held components unloaded (before the stop: their container may be one of ours).
 4. Every process: SIGINT, SIGTERM after its `stop_timeout` (default `--stop-timeout`, 10 s),
-   SIGKILL 5 s later. In parallel. A second Ctrl-C kills everything and skips what is left.
+   SIGKILL after its `kill_timeout` (default `--kill-timeout`, 5 s). In parallel, each on its
+   own deadlines. A second Ctrl-C kills everything and skips what is left.
 5. The engine's rclpy node is dropped.
 
 `lte-launch` runs it from `teardown()`; a test that used `start(procs)` gets the same sequence from
@@ -73,7 +79,7 @@ its own `procs.close()` (`bind_close`), so it leaves nothing loaded or running.
 |---|---|
 | `core.py` | `@launch` (three schema forms), `TypedLaunch` (`start(procs)`, `build`, `panes`, `plan`), `main()` |
 | `api.py` | What a body calls: `node`, `process`, `include`, scopes (`namespace`, `window`, `environment`, `ros_params`, `ros_remaps`), waits, `shutdown`, `on_shutdown`, `share` |
-| `engine.py` | `Run` (scopes, start, deaths, waits, supervise, end sequence), `Proc`, `ProcHandle`, stock-include death lines, `execute()`, tmux session |
+| `engine.py` | `Run` (scopes, start, deaths, waits, event callbacks, supervise, end sequence), `Proc`, `ProcHandle`, stock-include death lines, `execute()`, tmux session |
 | `composable.py` | `component(into=)`, `container()`, `container_at()`, `Container.load()`, `Component` |
 | `lifecycle.py` | `lifecycle_node()`, `lifecycle_at()`, `LifecycleNode`, teardown `shutdown` |
 | `command.py` | A node's argv without launch_ros: executable lookup, `--ros-args`, params file, prefix |
@@ -84,6 +90,7 @@ its own `procs.close()` (`bind_close`), so it leaves nothing loaded or running.
 | `effective.py` | The effective config as a loadable YAML file with provenance |
 | `cli.py` | The command: parser, `configure`, `--show-config`, `--dry-run`, `run()` |
 | `stock.py` | A typed launch as a stock `LaunchDescription` (one `lte-launch` process) |
+| `stock_scopes.py` | The body's scopes into a stock include: a generated wrapper launch file |
 
 ## Processes
 
@@ -102,6 +109,7 @@ Every process runs in a **libtmux_easy `Processes` group** (`libtmux_easy.proces
 | `respawn=`, `respawn_max=` | Start again after a delay; still "pending" until the new run's end is handled, so supervise never sees a gap |
 | `required=` | Its end ends the run |
 | `stop_timeout=` | Its own SIGINT grace (libtmux_easy `start(sigint_timeout=)`) |
+| `kill_timeout=` | Its own SIGTERM grace before SIGKILL (`start(sigterm_timeout=)`, libtmux_easy 0.5.0; an older one: a clear error when asked for) |
 | `prefix=` | Replaces `--launch-prefix` for this process, filter ignored (`""`: none), as stock |
 | `window=`, `with window()` | tmux window; default the namespace, else the launch's name |
 
@@ -117,6 +125,28 @@ on a failure or with `--tmux-dash`.
 | Inside | Waits, `process()`, service calls work; deaths and `shutdown()` no longer interrupt them |
 | Errors | Logged, the rest still run, exit 1. Past `timeout` (default 10 s): logged, its next wait raises |
 | How | Each on a daemon thread of its own, so it can time out; also a decorator (`@on_shutdown(timeout=30)`) |
+
+## Event callbacks
+
+```python
+sim = node("turtlesim", "turtlesim_node", name="sim", exits=(0, 1))
+@sim.on_exit
+def restart_helper(code): process("helper", ...)    # after bringup too
+@sim.on_output(r"collision")
+def stop(line): shutdown("collision")
+@cam.on_state("inactive")                           # a LifecycleNode
+def reactivate(): cam.activate()
+```
+
+| | |
+|---|---|
+| Events | `on_exit`: each end that is no death (code in `exits`, or a respawn). `on_output(regex)`: each matching line read from now on. `on_state(label)`: each state the node reaches, from `<node>/transition_event` (None: any) |
+| Argument | the code, line or label, if `fn` takes one |
+| Where | Queued by the watcher/reader threads (and rclpy), run **on the main thread**, one at a time: inside every wait of the body and in supervise. So a callback calls `node()`, waits, `shutdown()` as the body does; while it runs, nothing else does (keep it short) |
+| Deaths | Not callbacks: a death fails the run whether or not `on_exit` is registered. To react to a code, allow it in `exits=` |
+| Not for | `stop()`/`restart()`, teardown, anything once the run is ending (death, `shutdown()`, `required`, Ctrl-C; use `on_shutdown`), `on_shutdown` callbacks, a dry run. After `start(procs)` returns (no supervise), none run |
+| Errors | Logged with its name and propagated: fails the run as a body error (exit 1). `shutdown()` in one ends it cleanly |
+| Options | `once=True`; `proc.off(fn)` (None: all) unregisters; decorators return `fn`. `on_state` blocks until its subscription sees the node's publisher, so no later transition is missed; the body's own transitions count too |
 
 ## Composable nodes
 
@@ -169,16 +199,38 @@ A node's parameters and remaps, lowest first:
 | Layer | From |
 |---|---|
 | Body scopes | `with ros_params(use_sim_time=True):`, `with ros_remaps({...}):` (nested: the inner wins) |
-| Config | Matching node sections, `--ros-param`, `--ros-remap` |
+| Config | Matching node sections, `--ros-param`, `--ros-remap` (a stock include: `/**` only) |
 | The node's own | `params=` (RosParams or dict; typed beats untyped, a note under `-d`), `remaps=` |
+
+The three layers above go into one generated file under `/**`. On a node's command line,
+lowest first (`test_param_precedence.py`):
+
+| Layer | On the command line |
+|---|---|
+| `param_files=` | `--params-file F`, as given, first |
+| The generated file | `--params-file <log dir>/params/<window>.<name>.params.yaml` (`/**`) |
+| `ros_arguments=["-p", "x:=v"]` | last; rcl stores `-p` under `/**` too |
+
+- rcl's rule (rclcpp and rclpy alike): every file and `-p` merge into one table keyed by node
+  name; under one key a later value wins; the node applies each matching key in the order the
+  key first appeared.
+- So under `/**`: `param_files` < `params=`/config < `-p`. A `param_files` entry under the
+  node's own name wins over ours only if a `/**` key appeared before it (the same file or an
+  earlier one) -- a known gap (xfail), not fixable by the key we write alone.
+
+Log levels: `--log-level` (both forms) is on every node's and our containers' command line, so
+it reaches their components (a component's logger is `<ns>.<name>`, dotted). A load also sets
+`LoadNode.log_level` from the last bare level, but Jazzy's `rclcpp_components` ignores that
+field: a component in a container started elsewhere keeps that container's levels (xfail).
 
 - `$(...)` in any value uses the stock grammar (`$(env V)`, `$(find-pkg-share p)`, and
   `$(var NAME)` for this launch's own arguments). A substituted parameter is read as YAML again,
   as stock does (`$(env RATE 30)` is 30); quote inside to keep a string (`"'$(env V)'"`); an
   empty result is an error. `--show-config` notes `from $(...)` on it.
-- Applies to `node()`, `container()` and `load()`; not to `process()` or a stock include.
+- Applies to `node()`, `container()` and `load()`; not to `process()`. A stock include gets the
+  scopes and the universal (`/**`) sections only, under its nodes' own parameters (see below).
 - Node sections reach a node only with a `name`; the namespace comes from `namespace()` scopes.
-- Every run writes the effective config to `/tmp/lte-launch/<launch>-<pid>.yaml`; `--show-config`
+- Every run writes the effective config to `~/.ros/log/lte-launch/<launch>-<time>-<pid>/config.yaml`; `--show-config`
   dry-runs the body, so it shows which node each pattern matched. Scope values are code, not
   config, so it does not list them.
 
@@ -199,6 +251,21 @@ its `process has died [pid P, exit code C` lines (a per-line hook through
 - Ignored while we stop the include. Supervise waits 0.3 s after the last process ends, for a
   death line still being read.
 - `name=`, `window=`, `exits=`, `allow=`, `ready=`, `timeout=` are ours, not launch arguments.
+
+A stock include's scopes (`stock_scopes.py`): when the body has a `ros_params()` or `ros_remaps()`
+scope, or the config a `/**` section, `include()` writes a wrapper launch file to
+the run's params dir and runs `ros2 launch <wrapper> name:=value ...` instead. The wrapper is
+`GroupAction([SetParametersFromFile, SetRemap..., IncludeLaunchDescription])`,
+as stock would write it; the arguments stay on the command line and are passed on by name.
+With nothing to apply, the target runs as before.
+
+- Namespace: not applied. A stock file places its own nodes; pass its `namespace` argument if it has one.
+- Parameters: one `/**` parameter file (types survive; `SetParameter` would hand rcl text), the
+  scopes under `/**` sections. As stock, a node's own `parameters=` win over them.
+- Remappings: `SetRemap`, before the node's own, so they win (rcl takes the first match).
+- Config sections with any other pattern do not reach it: its node names are unknown here, and
+  `--show-config` could not say what they matched. A `/**` section shows
+  `-> w:name (stock include)`.
 
 ## Testing
 

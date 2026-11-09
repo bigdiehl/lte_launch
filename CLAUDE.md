@@ -80,7 +80,7 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   Wildcard *remappings* are ours: rcl does `/**` for parameters but rejects it for remap rules
   outright. The namespace comes from `with namespace()` scopes, so patterns see it.
 - **`--show-config` prints the effective config as a config file** — the same YAML **every
-  run writes** to `/tmp/lte-launch/<launch>-<pid>.yaml` and logs, so "what did that actually
+  run writes** to `~/.ros/log/lte-launch/<launch>-<time>-<pid>/config.yaml` and logs, so "what did that actually
   launch with?" is always answerable, and the answer is valid `--config` input (it
   round-trips). Provenance sits on every value, in the node sections exactly as in
   `launch_args` (`# default`, `# <file>`, `# cli`, `, shadowed by a typed field`), with
@@ -114,7 +114,8 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   kills). Exit 0 clean or interrupted, 1 a death or failed bringup, 2 a config error.
   `respawn=`, `required=`, `cwd=`, `env=`, `with environment()`, `--launch-prefix`.
   `stop_timeout=` per process (SIGINT's grace; run-wide `--stop-timeout`, libtmux_easy's
-  per-process `sigint_timeout`). `on_shutdown(fn)`: LIFO, before anything is signalled,
+  per-process `sigint_timeout`); `kill_timeout=` (SIGTERM's grace; `--kill-timeout`,
+  `sigterm_timeout`, libtmux_easy 0.5.0: feature-detected, a clear error on 0.4.0). `on_shutdown(fn)`: LIFO, before anything is signalled,
   `fn(reason)` with `.kind`; errors/timeouts logged, exit 1; not in a dry run.
 - **Composable nodes** (`composable.py`): `component(package, plugin, name=, into=)` picks
   placement from one value: None/`""` standalone (`executable=` as a node, else its own
@@ -138,8 +139,7 @@ built (index `docs/README.md`): `docs/goals.md` (goals, principles, direction, p
   stock `LaunchDescription`, one argument per field plus `lte_launch_config`, validated at
   include time, that runs one `lte-launch` process; `lte_launch_install_stubs(...)` in
   CMake puts a stub in `share/<pkg>/launch/` so stock can find it. Design-notes Q17.
-- **Parity with stock launch** is tracked feature by feature in `docs/parity.md` (next:
-  scopes into a stock include, `sigkill_timeout`).
+- **Parity with stock launch** is tracked feature by feature in `docs/parity.md` (nothing open at parity level).
 - **Pydantic 1** (system, apt/rosdep `python3-pydantic`), not 2 — launch authors import
   Pydantic directly in their own files, so a system install matters more than v2's
   stricter API. Both `package.xml`s declare `<exec_depend>python3-pydantic</exec_depend>`.

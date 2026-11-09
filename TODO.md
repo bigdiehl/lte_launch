@@ -60,5 +60,5 @@ Other
 
 log all final commands, remappings, parameters
     - [PARTLY] parameters/remappings and the whole effective config are written to
-      /tmp/lte-launch/<launch>-<pid>.yaml on every run, and the path is logged.
+      ~/.ros/log/lte-launch/<launch>-<time>-<pid>/config.yaml on every run, and the path is logged.
     - [DONE] the final process command lines: --log-commands; Q31

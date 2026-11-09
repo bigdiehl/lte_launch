@@ -30,4 +30,7 @@ rosdep update && rosdep install --from-paths . --ignore-src -y
 ## Making a release
 
 1. Bump `<version>` in `package.xml`; if it needs a newer libtmux_easy, bump `LIBTMUX_EASY` in `ci.yml`.
+   Pending: `kill_timeout=` / `--kill-timeout` need libtmux_easy 0.5.0 (`Processes(sigterm_timeout=)`,
+   branch `sigterm-timeout`); on `v0.4.0` CI skips their tests (`test_kill_timeout.py`). Release
+   libtmux_easy 0.5.0 and bump `LIBTMUX_EASY` for CI to exercise them.
 2. `git tag v<version> && git push origin v<version>`.
